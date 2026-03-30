@@ -354,12 +354,19 @@ async function checkSchedule() {
 
 async function sendEmailToManager(isTest = false) {
   const pending = entries.filter(e => !e.is_sent);
-  if (pending.length === 0) return isTest && showToast('No pending entries to dispatch', 'warning');
+  if (pending.length === 0) {
+    showToast('Nothing to send! No pending entries found.', 'warning');
+    return;
+  }
   isSendingNow = true;
   const btn = isTest ? btnTestSend : btnFinalize;
   const original = btn ? btn.innerHTML : "";
   try {
-    if (btn) { btn.disabled = true; btn.innerHTML = 'Sending...'; }
+    if (btn) { 
+      btn.disabled = true; 
+      btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Dispatching...'; 
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
     const pos = pending.filter(e => e.type === 'PO Approval');
     const advs = pending.filter(e => e.type === 'Advance Approval');
     
