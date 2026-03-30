@@ -123,6 +123,7 @@ async function loadEntries() {
       advancePercent: i.advance_percent, 
       advanceAmount: i.advance_amount, 
       notes: i.notes,
+      description: i.description,
       status: i.status || 'Pending', 
       is_sent: i.is_sent
     }));
@@ -149,6 +150,7 @@ async function createEntry(e) {
     amount: getNum('amount'), 
     currency: getVal('currency') || 'SAR',
     amount_sar: getNum('amount-sar'), 
+    description: getVal('description'),
     notes: getVal('notes'),
     advance_percent: getNum('advance-percent'),
     advance_amount: getNum('advance-amount'),
@@ -328,8 +330,15 @@ function renderDashboard() {
   
   if (poTbody) poTbody.innerHTML = poData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
-      <td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td>
-      <td>${(e.amountSar || 0).toLocaleString()}</td><td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
+      <td>${e.date}</td>
+      <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.description || ''}">
+        ${e.description || '-'}
+      </td>
+      <td>${e.prSo || '-'}</td>
+      <td>${e.po || '-'}</td>
+      <td>${e.supplier || '-'}</td>
+      <td>${(e.amountSar || 0).toLocaleString()}</td>
+      <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td style="text-align:right; white-space:nowrap;">
         ${!e.is_sent ? `
           <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
@@ -342,6 +351,9 @@ function renderDashboard() {
   if (advanceTbody) advanceTbody.innerHTML = advData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td>${e.date}</td>
+      <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.description || ''}">
+        ${e.description || '-'}
+      </td>
       <td>${e.prSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
@@ -387,14 +399,14 @@ async function sendEmailToManager(isTest = false) {
     
     // Header for PO Table
     let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th></tr>` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
     if(pos.length) poH += `</table>`;
 
     // Header for Advance Table (NEW COLUMNS ADDED)
     let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes || '-'}</td></tr>`);
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes || '-'}</td></tr>`);
     if(advs.length) advH += `</table>`;
 
     if (!managerEmail || !managerEmail.includes('@')) {

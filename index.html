@@ -65,6 +65,10 @@
             <input type="text" id="po-number" placeholder="Enter PO #" required>
           </div>
           <div class="input-group">
+            <label for="description">Description (Summary)</label>
+            <input type="text" id="description" placeholder="e.g. Monthly Spare Parts Order">
+          </div>
+          <div class="input-group">
             <label for="supplier">Supplier</label>
             <input type="text" id="supplier" list="supplier-list" placeholder="Type or select supplier" required>
             <datalist id="supplier-list"></datalist>
@@ -174,6 +178,7 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>Description</th>
               <th>PR/SO #</th>
               <th>PO #</th>
               <th>Supplier</th>
@@ -193,6 +198,7 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>Description</th>
               <th>PR/SO #</th>
               <th>PO #</th>
               <th>Supplier</th>
