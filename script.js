@@ -1,5 +1,6 @@
 /**
- * Approval System Management Tool - Fully Restored Production Script
+ * Approval System Management Tool - Final Unified Stable Script
+ * This version includes: Edits, CC Tags, Logic Engine, and Detailed Error Tracking.
  */
 
 // --- STATE MANAGEMENT ---
@@ -116,32 +117,72 @@ async function loadEntries() {
 async function createEntry(e) {
   e.preventDefault();
   if (!supabaseClient) return;
+
+  // 1. Prepare the standard payload
   const entryData = {
-    approval_type: approvalTypeSelect.value, pr_so_number: prSoInput.value, po_number: poNumberInput.value,
-    supplier: supplierInput.value, amount: parseFloat(amountInput.value) || 0, currency: currencySelect.value,
-    amount_sar: parseFloat(amountSarInput.value) || 0, notes: notesInput.value,
+    approval_type: approvalTypeSelect.value, 
+    pr_so_number: prSoInput.value, 
+    po_number: poNumberInput.value,
+    supplier: supplierInput.value, 
+    amount: parseFloat(amountInput.value) || 0, 
+    currency: currencySelect.value,
+    amount_sar: parseFloat(amountSarInput.value) || 0, 
+    notes: notesInput.value,
     advance_percent: parseFloat(advancePercentSelect.value) || 0,
     advance_amount: parseFloat(advanceAmountInput.value) || 0,
     advance_amount_original: (parseFloat(amountInput.value) * (parseFloat(advancePercentSelect.value)||0))/100,
-    po_date: poDateSpan.textContent, is_sent: false, status: 'Pending'
+    po_date: poDateSpan.textContent, 
+    is_sent: false, 
+    status: 'Pending'
   };
+
   try {
     showToast(editMode ? 'Updating...' : 'Logging...', 'info');
-    if (editMode) await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId);
-    else await supabaseClient.from('entries').insert([entryData]);
-    showToast('Success!', 'success');
+    
+    // 2. Execute the query
+    const { error } = editMode 
+      ? await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId)
+      : await supabaseClient.from('entries').insert([entryData]);
+
+    if (error) {
+      // 3. SMART FAIL-SAFE: If a specific column is missing, try a simpler version
+      if (error.message.includes('column') && error.message.includes('does not exist')) {
+        console.warn("Retrying with simplified schema due to mismatch:", error.message);
+        
+        // Remove the "newer" columns and try a basic insert
+        const safeData = { ...entryData };
+        delete safeData.notes;
+        delete safeData.advance_amount_original;
+        
+        const retry = editMode 
+          ? await supabaseClient.from('entries').update(safeData).eq('id', currentEditingId)
+          : await supabaseClient.from('entries').insert([safeData]);
+          
+        if (retry.error) throw retry.error;
+        showToast('Logged (Notes skipped - Add columns to SQL)', 'warning');
+      } else {
+        throw error;
+      }
+    } else {
+      showToast('Success!', 'success');
+    }
+
     cancelEdit();
     await loadEntries();
-  } catch (err) { showToast('Database error', 'error'); }
+  } catch (err) { 
+    console.error('DB ERROR:', err);
+    showToast('DB Error: ' + (err.message || 'Check Console'), 'error'); 
+  }
 }
 
 async function deleteEntry(id) {
   if (!confirm('Are you sure you want to delete this entry?')) return;
   try {
-    await supabaseClient.from('entries').delete().eq('id', id);
+    const { error } = await supabaseClient.from('entries').delete().eq('id', id);
+    if (error) throw error;
     showToast('Deleted', 'warning');
     await loadEntries();
-  } catch (e) { showToast('Failed to delete', 'error'); }
+  } catch (e) { showToast('DB Error: ' + (e.message || 'Fail'), 'error'); }
 }
 
 // --- CALCULATION ENGINE ---
@@ -188,18 +229,24 @@ async function updateSettings() {
   const newEmail = inputManagerEmail ? inputManagerEmail.value.trim() : managerEmail;
   const newCC = ccEmailsArray.join(',');
   try {
-    await supabaseClient.from('settings').upsert([
+    const { error } = await supabaseClient.from('settings').upsert([
       { key: 'daily_send_time', value: newTime },
       { key: 'manager_email', value: newEmail },
       { key: 'cc_emails', value: newCC }
     ], { onConflict: 'key' });
+    
+    if (error) throw error;
+
     dailySendTime = newTime; managerEmail = newEmail; ccEmails = newCC;
     if (displaySendTime) displaySendTime.textContent = format12h(newTime);
     if (settingsModal.classList.contains('active')) {
       settingsModal.classList.remove('active');
       showToast('Settings Saved', 'success');
     }
-  } catch (e) { console.error(e); }
+  } catch (e) { 
+    console.error('Settings Error:', e);
+    showToast('DB Error: ' + (e.message || 'Settings Fail'), 'error'); 
+  }
 }
 
 function renderCcTags() {
@@ -304,13 +351,11 @@ async function sendEmailToManager(isTest = false) {
     const pos = pending.filter(e => e.type === 'PO Approval');
     const advs = pending.filter(e => e.type === 'Advance Approval');
     
-    // Header for PO Table
     let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
       <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
     pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amount.toLocaleString()}</td><td>${e.currency}</td><td><b>${e.amountSar.toLocaleString()}</b></td><td>${e.notes||'-'}</td></tr>`);
     if(pos.length) poH += `</table>`;
 
-    // Header for Advance Table
     let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
       <tr style="background-color:#f8fafc;"><th>Date</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th><th>Adv (Original)</th><th>Notes</th></tr>` : "";
     advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${e.advanceAmount.toLocaleString()}</b></td><td>${e.advanceAmountOriginal ? e.advanceAmountOriginal.toLocaleString() : '0'} ${e.currency}</td><td>${e.notes||'-'}</td></tr>`);

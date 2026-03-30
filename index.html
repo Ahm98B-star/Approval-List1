@@ -140,20 +140,71 @@
 
           <div class="input-group" style="grid-column: 1 / -1;">
             <label for="notes">Notes</label>
-            <textarea id="notes" rows="2" placeholder="Add any additional details..."></textarea>
+          <div class="form-group">
+            <label>PR/SO Number</label>
+            <input type="text" id="pr-so-number" placeholder="Enter PR/SO #" required class="glass">
+          </div>
+          <div class="form-group">
+            <label>PO Number</label>
+            <input type="text" id="po-number" placeholder="Enter PO #" required class="glass">
+          </div>
+          <div class="form-group">
+            <label>Supplier</label>
+            <input type="text" id="supplier" list="supplier-list" placeholder="Type or select supplier" required class="glass">
+            <datalist id="supplier-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Amount</label>
+            <input type="number" id="amount" step="0.01" placeholder="0.00" required class="glass">
+          </div>
+          <div class="form-group">
+            <label>Currency</label>
+            <select id="currency" class="glass">
+              <option value="SAR">SAR</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Amount in SAR</label>
+            <input type="number" id="amount-sar" readonly placeholder="Amount in SAR" class="glass">
           </div>
         </div>
 
-        <!-- Dispatch Controls -->
-        <div style="display: flex; gap: 1rem; margin-top: 2rem; align-items: flex-end; flex-wrap: wrap;">
-          <button type="submit" class="btn btn-primary" id="btn-log-entry" style="flex: 2; height: 50px; font-size: 1.125rem;">
-            <i data-lucide="plus-circle"></i> Log Entry into Team Database
-          </button>
-          <button type="button" class="btn btn-outline" id="btn-cancel-edit" style="flex: 1; height: 50px; display: none;">
-            Cancel Edit
-          </button>
+        <div id="advance-fields" style="display:none; margin-top:1.5rem;" class="form-grid">
+          <div class="form-group">
+            <label>Advance %</label>
+            <select id="advance-percent" class="glass">
+              <option value="10">10%</option>
+              <option value="20">20%</option>
+              <option value="30">30%</option>
+              <option value="50">50%</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div id="custom-percent-group" class="form-group" style="display:none;">
+            <label>Custom %</label>
+            <input type="number" id="custom-percent" step="0.1" placeholder="%" class="glass">
+          </div>
+          <div class="form-group">
+            <label>Advance Amount (SAR)</label>
+            <input type="number" id="advance-amount" readonly class="glass">
+          </div>
         </div>
+
+        <div class="form-group" style="margin-top:1.5rem;">
+          <label>Notes</label>
+          <textarea id="notes" placeholder="Add any additional details..." class="glass" style="width:100%; min-height:80px; padding:12px; color:white;"></textarea>
+        </div>
+
+        <button type="submit" id="btn-log-entry" class="btn btn-primary" style="width:100%; margin-top:1.5rem; justify-content:center;">
+          <i data-lucide="plus-circle"></i> Log Entry into Team Database
+        </button>
       </form>
+      <button type="button" class="btn btn-outline" id="btn-cancel-edit" style="flex: 1; height: 50px; display: none;">
+        Cancel Edit
+      </button>
     </section>
 
     <!-- Dashboard Tables -->
