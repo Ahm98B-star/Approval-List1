@@ -397,6 +397,14 @@ async function sendEmailToManager(isTest = false) {
     advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes || '-'}</td></tr>`);
     if(advs.length) advH += `</table>`;
 
+    if (!managerEmail || !managerEmail.includes('@')) {
+      showToast('Error: Please enter a valid Manager Email on the dashboard!', 'error');
+      isSendingNow = false;
+      if(btn) { btn.disabled = false; btn.innerHTML = original; }
+      return;
+    }
+
+    const ccList = ccEmailsArray.join(', ');
     const totalPoSum = pos.reduce((a, b) => a + (b.amountSar || 0), 0);
     const totalAdvSum = advs.reduce((a, b) => a + (b.advanceAmount || 0), 0);
     const grandTotal = totalPoSum + totalAdvSum;
@@ -423,7 +431,10 @@ async function sendEmailToManager(isTest = false) {
     if (typeof lucide !== 'undefined') lucide.createIcons();
     const successModal = document.getElementById('success-modal');
     if (successModal) successModal.classList.add('active');
-  } catch (e) { showToast('Dispatch Failed: Check Internet', 'error'); }
+  } catch (err) { 
+    console.error("EmailJS Full Error:", err);
+    showToast('Dispatch Failed: ' + (err.text || 'Check API Settings'), 'error'); 
+  }
   finally { if(btn) { btn.disabled = false; btn.innerHTML = original; } isSendingNow = false; }
 }
 
