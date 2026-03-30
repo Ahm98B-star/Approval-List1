@@ -397,7 +397,10 @@ async function sendEmailToManager(isTest = false) {
     advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes || '-'}</td></tr>`);
     if(advs.length) advH += `</table>`;
 
-    const ccList = ccEmailsArray.join(', ');
+    const totalPoSum = pos.reduce((a, b) => a + (b.amountSar || 0), 0);
+    const totalAdvSum = advs.reduce((a, b) => a + (b.advanceAmount || 0), 0);
+    const grandTotal = totalPoSum + totalAdvSum;
+
     console.log("📨 Dispatching to:", managerEmail, "| CC:", ccList);
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
@@ -406,7 +409,9 @@ async function sendEmailToManager(isTest = false) {
       po_table: poH,
       advance_table: advH,
       summary_count: pending.length,
-      total_sar: (pending.reduce((a,b)=>a+(b.type==='PO Approval'?(b.amountSar || 0):(b.advanceAmount || 0)),0)).toLocaleString()
+      total_po_sar: totalPoSum.toLocaleString(),
+      total_adv_sar: totalAdvSum.toLocaleString(),
+      total_sar: grandTotal.toLocaleString()
     });
 
     if (!isTest) {
