@@ -373,9 +373,12 @@ async function sendEmailToManager(isTest = false) {
     advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
     if(advs.length) advH += `</table>`;
 
+    const ccList = ccEmailsArray.join(', ');
+    console.log("📨 Dispatching to:", managerEmail, "| CC:", ccList);
+
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       to_email: managerEmail,
-      cc_email: ccEmailsArray.join(','),
+      cc_email: ccList,
       po_table: poH,
       advance_table: advH,
       summary_count: pending.length,
