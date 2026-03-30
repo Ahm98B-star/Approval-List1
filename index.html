@@ -58,7 +58,7 @@
           </div>
           <div class="input-group">
             <label for="pr-so-number">PR/SO Number</label>
-            <input type="text" id="pr-so-number" placeholder="Enter PR/SO #" required>
+            <input type="text" id="pr-so-number" placeholder="Enter PR/SO #">
           </div>
           <div class="input-group">
             <label for="po-number">PO Number</label>
@@ -102,6 +102,7 @@
               <option value="20">20%</option>
               <option value="30">30%</option>
               <option value="50">50%</option>
+              <option value="100">100%</option>
               <option value="custom">Custom %</option>
             </select>
           </div>
@@ -192,11 +193,13 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>PR/SO #</th>
               <th>PO #</th>
               <th>Supplier</th>
               <th>Adv (SAR)</th>
+              <th>Notes</th>
               <th>Status</th>
-              <th style="width: 60px;"></th>
+              <th style="width: 80px;"></th>
             </tr>
           </thead>
           <tbody id="advance-tbody"></tbody>
