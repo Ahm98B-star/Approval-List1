@@ -24,8 +24,15 @@
         <h1>Approval System</h1>
         <p style="color: var(--text-muted);">Procurement Management Dashboard</p>
       </div>
-      <div style="display: flex; gap: 1rem; align-items: center;">
-        <button id="btn-settings" class="btn btn-outline btn-icon" title="Settings">
+      <div class="header-actions">
+        <div class="switch-wrapper">
+          <span class="switch-label">Show History</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-history">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <button id="btn-settings" class="btn btn-secondary btn-icon" title="System Settings">
           <i data-lucide="settings"></i>
         </button>
         <button id="theme-toggle" class="btn btn-outline btn-icon" title="Toggle Theme">
@@ -178,6 +185,7 @@
               <th>Currency</th>
               <th>Amount (SAR)</th>
               <th>Status</th>
+              <th>Notes</th>
               <th style="text-align: right;">Action</th>
             </tr>
           </thead>
@@ -197,9 +205,10 @@
               <th>Supplier</th>
               <th>Full Amount</th>
               <th>Advance %</th>
-              <th>Advance (SAR)</th>
-              <th>Advance (Original)</th>
+              <th>Adv Amount (SAR)</th>
+              <th>Adv (Orig)</th>
               <th>Status</th>
+              <th>Notes</th>
               <th style="text-align: right;">Action</th>
             </tr>
           </thead>
@@ -223,8 +232,12 @@
       </div>
       <div class="input-group">
         <label for="input-send-time">Daily Auto-Send Time (24h format)</label>
+        <input type="time" id="input-send-time" class="glass" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem;">
+      </div>
+      <div class="input-group">
+        <label for="input-manager-email">Manager Recipient Email</label>
         <div style="display: flex; gap: 0.5rem;">
-          <input type="time" id="input-send-time" class="glass" style="flex: 1; padding: 0.75rem;">
+          <input type="email" id="input-manager-email" class="glass" style="flex: 1; padding: 0.75rem;" placeholder="manager@example.com">
           <button id="btn-save-settings" class="btn btn-primary">Save</button>
         </div>
       </div>
