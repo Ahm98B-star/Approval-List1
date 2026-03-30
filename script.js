@@ -131,21 +131,28 @@ async function loadEntries() {
 }
 
 async function createEntry(e) {
-  e.preventDefault();
+  if (e) e.preventDefault();
   if (!supabaseClient) return;
   
+  // Safe Selectors
+  const getVal = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  };
+  const getNum = (id) => parseFloat(getVal(id)) || 0;
+
   const entryData = {
-    approval_type: approvalTypeSelect.value, 
-    pr_so_number: prSoInput.value, 
-    po_number: poNumberInput.value,
-    supplier: supplierInput.value, 
-    amount: parseFloat(amountInput.value) || 0, 
-    currency: currencySelect.value,
-    amount_sar: parseFloat(amountSarInput.value) || 0, 
-    notes: notesInput.value,
-    advance_percent: parseFloat(advancePercentSelect.value) || 0,
-    advance_amount: parseFloat(advanceAmountInput.value) || 0,
-    po_date: poDateSpan.textContent, 
+    approval_type: getVal('approval-type') || 'PO Approval', 
+    pr_so_number: getVal('pr-so-number'), 
+    po_number: getVal('po-number'),
+    supplier: getVal('supplier'), 
+    amount: getNum('amount'), 
+    currency: getVal('currency') || 'SAR',
+    amount_sar: getNum('amount-sar'), 
+    notes: getVal('notes'),
+    advance_percent: getNum('advance-percent'),
+    advance_amount: getNum('advance-amount'),
+    po_date: poDateSpan ? poDateSpan.textContent : new Date().toISOString().split('T')[0], 
     is_sent: false, 
     status: 'Pending'
   };
@@ -159,11 +166,12 @@ async function createEntry(e) {
 
     if (error) throw error;
     
-    showToast(editMode ? 'Updated Successfully!' : 'Logged Successfully!', 'success');
+    showToast(editMode ? 'Success!' : 'Successfully Logged!', 'success');
     cancelEdit();
     await loadEntries();
   } catch (err) { 
-    showToast('Database Error: ' + (err.message || 'Check connection'), 'error'); 
+    console.error("Database Error:", err);
+    showToast('Error: ' + (err.message || 'Check database connection'), 'error'); 
   }
 }
 
