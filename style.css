@@ -63,7 +63,8 @@ h1, h2, h3 {
 }
 
 .container {
-  max-width: 1200px;
+  width: 95%;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
@@ -164,12 +165,17 @@ input:focus, select:focus {
 .table-container {
   overflow-x: auto;
   margin-top: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  position: relative;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+  min-width: 1000px; /* Safety: ensures columns don't squash too much */
 }
 
 th, td {
@@ -340,6 +346,8 @@ input:checked + .slider:before {
   border-radius: 0.5rem;
   min-height: 44px;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
 }
 
 .cc-tag {
