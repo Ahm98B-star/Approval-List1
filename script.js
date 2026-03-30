@@ -304,12 +304,16 @@ async function sendEmailToManager(isTest = false) {
     const pos = pending.filter(e => e.type === 'PO Approval');
     const advs = pending.filter(e => e.type === 'Advance Approval');
     
-    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;">` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()} SAR</td><td>${e.notes||''}</td></tr>`);
+    // Header for PO Table
+    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amount.toLocaleString()}</td><td>${e.currency}</td><td><b>${e.amountSar.toLocaleString()}</b></td><td>${e.notes||'-'}</td></tr>`);
     if(pos.length) poH += `</table>`;
 
-    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;">` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.advanceAmount.toLocaleString()} SAR</td><td>${e.notes||''}</td></tr>`);
+    // Header for Advance Table
+    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th><th>Adv (Original)</th><th>Notes</th></tr>` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${e.advanceAmount.toLocaleString()}</b></td><td>${e.advanceAmountOriginal ? e.advanceAmountOriginal.toLocaleString() : '0'} ${e.currency}</td><td>${e.notes||'-'}</td></tr>`);
     if(advs.length) advH += `</table>`;
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
@@ -327,7 +331,7 @@ async function sendEmailToManager(isTest = false) {
       await loadEntries();
     }
     showToast('Success!', 'success');
-  } catch (e) { showToast('Email failed', 'error'); }
+  } catch (e) { console.error(e); showToast('Email failed', 'error'); }
   finally { if(btn) { btn.disabled = false; btn.innerHTML = original; } isSendingNow = false; }
 }
 
