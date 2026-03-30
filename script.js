@@ -152,7 +152,7 @@ async function createEntry(e) {
     amount_sar: getNum('amount-sar'), 
     description: getVal('description'),
     notes: getVal('notes'),
-    advance_percent: getNum('advance-percent'),
+    advance_percent: (getVal('advance-percent') === 'custom' ? getNum('custom-percent') : getNum('advance-percent')),
     advance_amount: getNum('advance-amount'),
     po_date: poDateSpan ? poDateSpan.textContent : new Date().toISOString().split('T')[0], 
     is_sent: false, 
