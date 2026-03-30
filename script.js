@@ -670,6 +670,8 @@ async function createEntry(e) {
   }
 }
 
+// Event Listeners
+if (entryForm) entryForm.addEventListener('submit', createEntry);
 if (btnExport) btnExport.addEventListener('click', () => {
   if (entries.length === 0) return showToast('No data to export!', 'error');
   const wb = XLSX.utils.book_new();
@@ -677,6 +679,17 @@ if (btnExport) btnExport.addEventListener('click', () => {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e => e.type === 'PO Approval').map(mapData)), "PO");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e => e.type === 'Advance Approval').map(mapData)), "Advance");
   XLSX.writeFile(wb, `Approval_System_${new Date().toISOString().split('T')[0]}.xlsx`);
+});
+
+if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(false));
+if (btnTestSend) btnTestSend.addEventListener('click', () => sendEmailToManager(true));
+if (btnSettings) btnSettings.addEventListener('click', () => settingsModal.classList.add('active'));
+if (btnCloseSettings) btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
+if (btnSaveSettings) btnSaveSettings.addEventListener('click', updateSettings);
+if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+if (toggleHistory) toggleHistory.addEventListener('change', (e) => {
+  showHistory = e.target.checked;
+  loadEntries();
 });
 
 function showToast(message, type = 'info') {
@@ -691,4 +704,5 @@ function showToast(message, type = 'info') {
   setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 3000);
 }
 
+// --- INITIALIZE SYSTEM ---
 init();
