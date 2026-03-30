@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approval System Management Tool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- SheetJS for Excel Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Supabase JS Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container fade-in">
+    <header class="header">
+      <div>
+        <h1>Approval System</h1>
+        <p style="color: var(--text-muted);">Procurement Management Dashboard</p>
+      </div>
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <button id="theme-toggle" class="btn btn-outline btn-icon" title="Toggle Theme">
+          <i data-lucide="sun" id="sun-icon"></i>
+          <i data-lucide="moon" id="moon-icon" style="display: none;"></i>
+        </button>
+        <div id="current-date-display" class="glass" style="padding: 0.5rem 1rem; font-weight: 500; cursor: pointer;">
+          PO : <span id="po-date">Loading...</span>
+          <input type="date" id="date-input" style="display: none; position: absolute; z-index: 10;">
+        </div>
+      </div>
+    </header>
+
+    <!-- Entry Form -->
+    <section class="glass card">
+      <h2>New Entry</h2>
+      <form id="entry-form">
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="approval-type">Approval Type</label>
+            <select id="approval-type" required>
+              <option value="PO Approval">PO Approval</option>
+              <option value="Advance Approval">Advance Approval</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="pr-so-number">PR/SO Number</label>
+            <input type="text" id="pr-so-number" placeholder="Enter PR/SO #" required>
+          </div>
+          <div class="input-group">
+            <label for="po-number">PO Number</label>
+            <input type="text" id="po-number" placeholder="Enter PO #" required>
+          </div>
+          <div class="input-group">
+            <label for="supplier">Supplier</label>
+            <div style="position: relative;">
+              <input type="text" id="supplier" list="supplier-list" placeholder="Type or select supplier" required>
+              <datalist id="supplier-list"></datalist>
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="amount">Amount</label>
+            <input type="number" step="0.01" id="amount" placeholder="0.00" required>
+          </div>
+          <div class="input-group">
+            <label for="currency">Currency</label>
+            <div style="position: relative;">
+              <input type="text" id="currency" list="currency-list" placeholder="SAR" required>
+              <datalist id="currency-list">
+                <option value="SAR">Saudi Riyal (SAR)</option>
+                <option value="USD">US Dollar (USD)</option>
+                <option value="EUR">Euro (EUR)</option>
+                <option value="GBP">British Pound (GBP)</option>
+                <option value="AED">UAE Dirham (AED)</option>
+                <option value="QAR">Qatari Rial (QAR)</option>
+                <option value="KWD">Kuwaiti Dinar (KWD)</option>
+                <option value="BHD">Bahraini Dinar (BHD)</option>
+                <option value="OMR">Omani Rial (OMR)</option>
+                <option value="JPY">Japanese Yen (JPY)</option>
+                <option value="CNY">Chinese Yuan (CNY)</option>
+                <option value="INR">Indian Rupee (INR)</option>
+                <option value="EGP">Egyptian Pound (EGP)</option>
+                <option value="JOD">Jordanian Dinar (JOD)</option>
+                <option value="PKR">Pakistani Rupee (PKR)</option>
+                <option value="THB">Thai Baht (THB)</option>
+                <option value="TRY">Turkish Lira (TRY)</option>
+                <option value="MYR">Malaysian Ringgit (MYR)</option>
+                <option value="CHF">Swiss Franc (CHF)</option>
+                <option value="CAD">Canadian Dollar (CAD)</option>
+                <option value="AUD">Australian Dollar (AUD)</option>
+                <option value="SGD">Singapore Dollar (SGD)</option>
+                <option value="ZAR">South African Rand (ZAR)</option>
+                <option value="LBP">Lebanese Pound (LBP)</option>
+              </datalist>
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="amount-sar">Amount in SAR</label>
+            <input type="number" step="0.01" id="amount-sar" readonly style="background: rgba(255,255,255,0.02);">
+          </div>
+          
+          <!-- Advance Payment Fields (Visible when Advance Approval is selected) -->
+          <div id="advance-fields" class="form-grid" style="grid-column: 1 / -1; display: none; margin-top: 0;">
+            <div class="input-group">
+              <label for="advance-percent">Advance Payment %</label>
+              <select id="advance-percent">
+                <option value="0">Select %</option>
+                <option value="10">10%</option>
+                <option value="20">20%</option>
+                <option value="30">30%</option>
+                <option value="50">50%</option>
+                <option value="100">100%</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="input-group" id="custom-percent-group" style="display: none;">
+              <label for="custom-percent">Custom %</label>
+              <input type="number" id="custom-percent" placeholder="Enter %">
+            </div>
+            <div class="input-group">
+              <label for="advance-amount">Advance Amount</label>
+              <input type="number" step="0.01" id="advance-amount" readonly style="background: rgba(255,255,255,0.02);">
+            </div>
+          </div>
+
+          <div class="input-group" style="grid-column: 1 / -1;">
+            <label for="notes">Notes</label>
+            <textarea id="notes" rows="2" placeholder="Add any additional details..."></textarea>
+          </div>
+        </div>
+
+        <!-- Dispatch Controls -->
+        <div style="display: flex; gap: 1rem; margin-top: 2rem; align-items: flex-end; flex-wrap: wrap;">
+          <button type="submit" class="btn btn-primary" id="btn-log-entry">
+            <i data-lucide="plus-circle"></i> Log Entry
+          </button>
+          <button type="button" class="btn btn-outline" id="btn-send-now" style="border-color: var(--primary); color: var(--primary);">
+            <i data-lucide="send"></i> Send Now
+          </button>
+          <div class="input-group" style="flex: 1; min-width: 150px; max-width: 200px;">
+            <label for="schedule-time">Schedule Dispatch</label>
+            <input type="datetime-local" id="schedule-time">
+          </div>
+          <button type="button" class="btn btn-outline" id="btn-schedule">
+            <i data-lucide="clock"></i> Schedule
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Dashboard Tables -->
+    <section class="glass card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h2>Dashboard</h2>
+        <button class="btn btn-outline" id="btn-export">
+          <i data-lucide="download"></i> Export to Excel
+        </button>
+      </div>
+
+      <!-- PO Approvals Table -->
+      <div class="table-container">
+        <h3 style="margin-bottom: 1rem; color: var(--primary);">PO Approvals</h3>
+        <table id="po-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>PR/SO #</th>
+              <th>PO #</th>
+              <th>Supplier</th>
+              <th>Amount</th>
+              <th>Currency</th>
+              <th>Amount (SAR)</th>
+              <th>Status</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="po-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Advance Approvals Table -->
+      <div class="table-container" style="margin-top: 3rem;">
+        <h3 style="margin-bottom: 1rem; color: var(--secondary);">Advance Approvals</h3>
+        <table id="advance-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>PR/SO #</th>
+              <th>PO #</th>
+              <th>Supplier</th>
+              <th>Full Amount</th>
+              <th>Advance %</th>
+              <th>Advance (SAR)</th>
+              <th>Advance (Original)</th>
+              <th>Status</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="advance-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer Credits -->
+    <footer style="text-align: center; margin-top: 4rem; padding: 2rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.875rem;">
+      <p>This tool is created by <strong>Ahmed Bazuhair</strong></p>
+    </footer>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" style="position: fixed; bottom: 2rem; right: 2rem; z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem;"></div>
+
+  <script src="script.js"></script>
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+  </script>
+</body>
+</html>
