@@ -115,18 +115,40 @@
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary" id="btn-log-entry" style="width: 100%; margin-top: 2rem; height: 50px; font-size: 1.1rem; justify-content: center;">
-          <i data-lucide="plus-circle"></i> Log Entry into Team Database
-        </button>
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+          <button type="submit" class="btn btn-primary" id="btn-log-entry" style="flex: 2; height: 50px; font-size: 1.1rem; justify-content: center;">
+            <i data-lucide="plus-circle"></i> Log Entry into Team Database
+          </button>
+          <button type="button" class="btn btn-outline" id="btn-cancel-edit" style="flex: 1; height: 50px; display: none; justify-content: center;">
+            Cancel Edit
+          </button>
+        </div>
       </form>
     </section>
 
-    <!-- Dashboard Tables -->
+    <!-- Dashboard Configuration & Tables -->
     <section class="glass card">
       <!-- Dynamic Status Banner -->
       <div id="status-banner" class="status-banner fade-in">
         <i data-lucide="info" style="color: var(--primary);"></i>
-        <p><strong>📧 Daily Summary:</strong> The final list will be compiled and sent to the <strong>Manager</strong> automatically today by <strong id="display-send-time">Loading...</strong>.</p>
+        <p><strong>📧 Daily Summary:</strong> Sent to the <strong>Manager</strong> today by <strong id="display-send-time">Loading...</strong>.</p>
+      </div>
+
+      <!-- NEW: Email Dispatch Bar -->
+      <div class="glass dispatch-bar" style="border-radius: 12px; margin-bottom: 2rem;">
+        <div style="flex: 1; min-width: 280px;">
+          <label style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block;">Manager Recipient Email</label>
+          <input type="email" id="input-manager-email" placeholder="manager@example.com" class="glass" style="width: 100%;">
+        </div>
+        <div style="flex: 2; min-width: 350px;">
+          <label style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block;">CC Recipients (Type and press Enter)</label>
+          <div id="cc-tags-container" class="cc-tags-container glass">
+            <input type="text" id="new-cc-input" placeholder="Add email...">
+            <button type="button" id="btn-add-cc" class="btn btn-primary btn-icon" style="height: 28px; width: 28px; padding: 0;">
+              <i data-lucide="plus" style="width: 16px;"></i>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
@@ -153,7 +175,7 @@
               <th>Supplier</th>
               <th>SAR Amount</th>
               <th>Status</th>
-              <th style="width: 60px;"></th>
+              <th style="width: 80px;"></th>
             </tr>
           </thead>
           <tbody id="po-tbody"></tbody>

@@ -1,6 +1,6 @@
 /**
  * Approval System Management Tool
- * Stable Version (Pre-CC Tag Updates)
+ * Premium Version (CC Tags + Edit Mode)
  */
 
 // --- STATE MANAGEMENT ---
@@ -17,7 +17,7 @@ try {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     console.log("✅ Supabase Engine Loaded.");
   } else {
-    alert("CRITICAL ERROR: Supabase library failed to load! Please check your internet connection and refresh.");
+    alert("CRITICAL ERROR: Supabase library failed to load! Please check your internet connection.");
   }
 } catch (e) { 
   console.error("❌ Supabase Initialization Error:", e);
@@ -56,15 +56,22 @@ const btnFinalize = document.getElementById('btn-finalize');
 const themeToggle = document.getElementById('theme-toggle');
 const poNumberInput = document.getElementById('po-number');
 const prSoInput = document.getElementById('pr-so-number');
+const notesInput = document.getElementById('notes');
+const btnCancelEdit = document.getElementById('btn-cancel-edit');
+const btnLogEntry = document.getElementById('btn-log-entry');
 
-// Settings Elements
+// Dispatch Elements
+const inputManagerEmail = document.getElementById('input-manager-email');
+const ccTagsContainer = document.getElementById('cc-tags-container');
+const newCcInput = document.getElementById('new-cc-input');
+const btnAddCc = document.getElementById('btn-add-cc');
+
+// Settings Modal Elements
 const settingsModal = document.getElementById('settings-modal');
 const btnSettings = document.getElementById('btn-settings');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const inputSendTime = document.getElementById('input-send-time');
-const inputManagerEmail = document.getElementById('input-manager-email');
-const inputCcEmails = document.getElementById('input-cc-emails');
 const displaySendTime = document.getElementById('display-send-time');
 const toggleHistory = document.getElementById('toggle-history');
 const btnTestSend = document.getElementById('btn-test-send');
@@ -72,9 +79,11 @@ const btnTestSend = document.getElementById('btn-test-send');
 // App State
 let dailySendTime = '14:00';
 let managerEmail = 'a.bazuhair@amco-saudi.com';
-let ccEmails = '';
+let ccEmailsArray = [];
 let isSendingNow = false;
 let showHistory = false;
+let editMode = false;
+let currentEditingId = null;
 
 // --- INITIALIZE ---
 async function init() {
@@ -83,6 +92,7 @@ async function init() {
   const today = new Date().toISOString().split('T')[0];
   if (poDateSpan) poDateSpan.textContent = today;
   if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
+  
   await loadSettings();
   await loadEntries();
   updateSupplierDatalist();
@@ -98,13 +108,23 @@ async function loadEntries() {
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) {
     console.error("Load Entries Error:", error);
-    showToast('Failed to load table', 'error');
+    showToast('Failed to load table data', 'error');
   } else {
     entries = data.map(i => ({
-      id: i.id, type: i.approval_type, date: i.po_date, prSo: i.pr_so_number, po: i.po_number,
-      supplier: i.supplier, amount: i.amount, currency: i.currency, amountSar: i.amount_sar,
-      advancePercent: i.advance_percent, advanceAmount: i.advance_amount, 
-      status: i.status, is_sent: i.is_sent
+      id: i.id, 
+      type: i.approval_type, 
+      date: i.po_date, 
+      prSo: i.pr_so_number, 
+      po: i.po_number,
+      supplier: i.supplier, 
+      amount: i.amount, 
+      currency: i.currency, 
+      amountSar: i.amount_sar,
+      advancePercent: i.advance_percent, 
+      advanceAmount: i.advance_amount, 
+      notes: i.notes,
+      status: i.status || 'Pending', 
+      is_sent: i.is_sent
     }));
     renderDashboard();
   }
@@ -113,6 +133,7 @@ async function loadEntries() {
 async function createEntry(e) {
   e.preventDefault();
   if (!supabaseClient) return;
+  
   const entryData = {
     approval_type: approvalTypeSelect.value, 
     pr_so_number: prSoInput.value, 
@@ -121,18 +142,25 @@ async function createEntry(e) {
     amount: parseFloat(amountInput.value) || 0, 
     currency: currencySelect.value,
     amount_sar: parseFloat(amountSarInput.value) || 0, 
+    notes: notesInput.value,
     advance_percent: parseFloat(advancePercentSelect.value) || 0,
     advance_amount: parseFloat(advanceAmountInput.value) || 0,
     po_date: poDateSpan.textContent, 
     is_sent: false, 
     status: 'Pending'
   };
+
   try {
-    const { error } = await supabaseClient.from('entries').insert([entryData]);
+    showToast(editMode ? 'Updating Entry...' : 'Logging Entry...', 'info');
+    
+    const { error } = editMode 
+      ? await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId)
+      : await supabaseClient.from('entries').insert([entryData]);
+
     if (error) throw error;
-    showToast('Logged Successfully!', 'success');
-    entryForm.reset();
-    calculate();
+    
+    showToast(editMode ? 'Updated Successfully!' : 'Logged Successfully!', 'success');
+    cancelEdit();
     await loadEntries();
   } catch (err) { 
     showToast('Database Error: ' + (err.message || 'Check connection'), 'error'); 
@@ -144,9 +172,52 @@ async function deleteEntry(id) {
   try {
     const { error } = await supabaseClient.from('entries').delete().eq('id', id);
     if (error) throw error;
-    showToast('Deleted', 'warning');
+    showToast('Deleted from Database', 'warning');
     await loadEntries();
   } catch (e) { showToast('Delete Failed', 'error'); }
+}
+
+// --- EDIT WORKFLOW ---
+window.startEdit = function(id) {
+  const e = entries.find(x => x.id === id);
+  if (!e) return;
+  
+  editMode = true;
+  currentEditingId = id;
+  
+  // Fill Form
+  if (poDateSpan) poDateSpan.textContent = e.date;
+  if (approvalTypeSelect) approvalTypeSelect.value = e.type;
+  if (prSoInput) prSoInput.value = e.prSo || '';
+  if (poNumberInput) poNumberInput.value = e.po || '';
+  if (supplierInput) supplierInput.value = e.supplier || '';
+  if (amountInput) amountInput.value = e.amount || 0;
+  if (currencySelect) currencySelect.value = e.currency || 'SAR';
+  if (notesInput) notesInput.value = e.notes || '';
+  
+  if (approvalTypeSelect.value === 'Advance Approval') {
+    advanceFields.style.display = 'grid';
+    if (advancePercentSelect) advancePercentSelect.value = e.advancePercent || 0;
+  } else {
+    advanceFields.style.display = 'none';
+  }
+
+  // Change UI
+  if (btnCancelEdit) btnCancelEdit.style.display = 'flex';
+  if (btnLogEntry) btnLogEntry.innerHTML = '<i data-lucide="save"></i> Update Existing Entry';
+  
+  calculate();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+function cancelEdit() {
+  editMode = false;
+  currentEditingId = null;
+  entryForm.reset();
+  if (btnCancelEdit) btnCancelEdit.style.display = 'none';
+  if (btnLogEntry) btnLogEntry.innerHTML = '<i data-lucide="plus-circle"></i> Log Entry into Team Database';
+  advanceFields.style.display = 'none';
+  calculate();
 }
 
 // --- CALCULATION ENGINE ---
@@ -163,7 +234,7 @@ function calculate() {
   }
 }
 
-// --- SETTINGS LOGIC ---
+// --- SETTINGS & CC LOGIC ---
 async function loadSettings() {
   if (!supabaseClient) return;
   const { data } = await supabaseClient.from('settings').select('*');
@@ -179,8 +250,8 @@ async function loadSettings() {
         if (inputManagerEmail) inputManagerEmail.value = s.value;
       }
       if (s.key === 'cc_emails') {
-        ccEmails = s.value;
-        if (inputCcEmails) inputCcEmails.value = s.value;
+        ccEmailsArray = s.value ? s.value.split(',').map(e => e.trim()).filter(e=>e) : [];
+        renderCcTags();
       }
     });
   }
@@ -190,19 +261,57 @@ async function updateSettings() {
   if (!supabaseClient) return;
   const newTime = inputSendTime.value;
   const newEmail = inputManagerEmail.value.trim();
-  const newCC = inputCcEmails.value.trim();
+  const newCC = ccEmailsArray.join(',');
   try {
-    await supabaseClient.from('settings').upsert([
+    const { error } = await supabaseClient.from('settings').upsert([
       { key: 'daily_send_time', value: newTime },
       { key: 'manager_email', value: newEmail },
       { key: 'cc_emails', value: newCC }
     ], { onConflict: 'key' });
-    dailySendTime = newTime; managerEmail = newEmail; ccEmails = newCC;
+    
+    if (error) throw error;
+    
+    dailySendTime = newTime; managerEmail = newEmail;
     if (displaySendTime) displaySendTime.textContent = format12h(newTime);
-    settingsModal.classList.remove('active');
-    showToast('Settings Saved', 'success');
-  } catch (e) { showToast('Save Failed', 'error'); }
+    if (settingsModal.classList.contains('active')) {
+      settingsModal.classList.remove('active');
+      showToast('Configuration Updated', 'success');
+    }
+  } catch (e) { 
+    showToast('Failed to save settings', 'error'); 
+  }
 }
+
+function renderCcTags() {
+  if (!ccTagsContainer) return;
+  // Clear tags but keep the input
+  const tags = ccTagsContainer.querySelectorAll('.cc-tag');
+  tags.forEach(t => t.remove());
+  
+  ccEmailsArray.forEach((email, index) => {
+    const tag = document.createElement('div');
+    tag.className = 'cc-tag';
+    tag.innerHTML = `<span>${email}</span><span class="remove-btn" onclick="removeCcTag(${index})"><i data-lucide="x" style="width:14px;"></i></span>`;
+    ccTagsContainer.insertBefore(tag, newCcInput);
+  });
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+window.addCcFromInput = function() {
+  const email = newCcInput.value.trim();
+  if (email && email.includes('@') && !ccEmailsArray.includes(email)) {
+    ccEmailsArray.push(email);
+    newCcInput.value = '';
+    renderCcTags();
+    updateSettings(); // Auto-save on change
+  }
+};
+
+window.removeCcTag = function(index) {
+  ccEmailsArray.splice(index, 1);
+  renderCcTags();
+  updateSettings(); // Auto-save on change
+};
 
 // --- UI HELPERS ---
 function renderDashboard() {
@@ -211,20 +320,26 @@ function renderDashboard() {
   
   if (poTbody) poTbody.innerHTML = poData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
-      <td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td>
+      <td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td>
       <td>${(e.amountSar || 0).toLocaleString()}</td><td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
-      <td style="text-align:right;">
-        ${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
+      <td style="text-align:right; white-space:nowrap;">
+        ${!e.is_sent ? `
+          <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
+          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+        ` : ''}
       </td>
     </tr>
   `).join('');
 
   if (advanceTbody) advanceTbody.innerHTML = advData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
-      <td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.advanceAmount || 0).toLocaleString()}</td>
+      <td>${e.date}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.advanceAmount || 0).toLocaleString()}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
-      <td style="text-align:right;">
-        ${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
+      <td style="text-align:right; white-space:nowrap;">
+        ${!e.is_sent ? `
+          <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
+          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+        ` : ''}
       </td>
     </tr>
   `).join('');
@@ -239,7 +354,7 @@ async function checkSchedule() {
 
 async function sendEmailToManager(isTest = false) {
   const pending = entries.filter(e => !e.is_sent);
-  if (pending.length === 0) return isTest && showToast('No pending entries', 'warning');
+  if (pending.length === 0) return isTest && showToast('No pending entries to dispatch', 'warning');
   isSendingNow = true;
   const btn = isTest ? btnTestSend : btnFinalize;
   const original = btn ? btn.innerHTML : "";
@@ -248,21 +363,19 @@ async function sendEmailToManager(isTest = false) {
     const pos = pending.filter(e => e.type === 'PO Approval');
     const advs = pending.filter(e => e.type === 'Advance Approval');
     
-    // Header for PO Table
     let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
       <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
     if(pos.length) poH += `</table>`;
 
-    // Header for Advance Table
     let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
       <tr style="background-color:#f8fafc;"><th>Date</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
     if(advs.length) advH += `</table>`;
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       to_email: managerEmail,
-      cc_email: ccEmails,
+      cc_email: ccEmailsArray.join(','),
       po_table: poH,
       advance_table: advH,
       summary_count: pending.length,
@@ -273,8 +386,8 @@ async function sendEmailToManager(isTest = false) {
       await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(e=>e.id));
       await loadEntries();
     }
-    showToast('Email Sent Successfully!', 'success');
-  } catch (e) { showToast('Email Failed', 'error'); }
+    showToast('Dispatch Successful!', 'success');
+  } catch (e) { showToast('Dispatch Failed: Check Internet', 'error'); }
   finally { if(btn) { btn.disabled = false; btn.innerHTML = original; } isSendingNow = false; }
 }
 
@@ -316,6 +429,7 @@ function subscribeToChanges() {
 
 // --- LISTENERS ---
 if (entryForm) entryForm.addEventListener('submit', createEntry);
+if (btnCancelEdit) btnCancelEdit.addEventListener('click', cancelEdit);
 if (amountInput) amountInput.addEventListener('input', calculate);
 if (currencySelect) currencySelect.addEventListener('change', calculate);
 if (approvalTypeSelect) approvalTypeSelect.addEventListener('change', () => {
@@ -332,16 +446,14 @@ if (btnSaveSettings) btnSaveSettings.addEventListener('click', updateSettings);
 if (toggleHistory) toggleHistory.addEventListener('change', e => { showHistory = e.target.checked; loadEntries(); });
 if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(false));
+if (btnTestSend) btnTestSend.addEventListener('click', () => sendEmailToManager(true));
+if (inputManagerEmail) inputManagerEmail.addEventListener('change', updateSettings);
+if (btnAddCc) btnAddCc.addEventListener('click', addCcFromInput);
+if (newCcInput) newCcInput.addEventListener('keydown', e => e.key==='Enter' && (e.preventDefault(), addCcFromInput()));
 if (btnExport) btnExport.addEventListener('click', () => {
-  if (entries.length === 0) return showToast('No table data', 'error');
+  if (entries.length === 0) return showToast('No data to export', 'error');
   const wb = XLSX.utils.book_new();
-  const mapD = (e) => ({ 
-    Date: e.date, 
-    'PR/SO': e.prSo || '-', 
-    PO: e.po || '-', 
-    Supplier: e.supplier || '-', 
-    SAR: (e.amountSar || 0) 
-  });
+  const mapD = (e) => ({ Date: e.date, 'PR/SO': e.prSo || '-', PO: e.po || '-', Supplier: e.supplier || '-', SAR: (e.amountSar || 0) });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='PO Approval').map(mapD)), "PO");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='Advance Approval').map(mapD)), "Advance");
   XLSX.writeFile(wb, `Approvals_${new Date().toISOString().split('T')[0]}.xlsx`);
