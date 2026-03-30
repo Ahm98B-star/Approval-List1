@@ -146,8 +146,11 @@
 
         <!-- Dispatch Controls -->
         <div style="display: flex; gap: 1rem; margin-top: 2rem; align-items: flex-end; flex-wrap: wrap;">
-          <button type="submit" class="btn btn-primary" id="btn-log-entry" style="width: 100%; height: 50px; font-size: 1.125rem;">
+          <button type="submit" class="btn btn-primary" id="btn-log-entry" style="flex: 2; height: 50px; font-size: 1.125rem;">
             <i data-lucide="plus-circle"></i> Log Entry into Team Database
+          </button>
+          <button type="button" class="btn btn-outline" id="btn-cancel-edit" style="flex: 1; height: 50px; display: none;">
+            Cancel Edit
           </button>
         </div>
       </form>
@@ -161,10 +164,29 @@
         <p><strong>📧 Daily Summary:</strong> The final list will be compiled and sent to the <strong>Manager</strong> automatically today by <strong id="display-send-time">Loading...</strong>.</p>
       </div>
 
+      <!-- NEW: Email Dispatch Bar -->
+      <div class="glass" style="padding: 1.5rem; margin-bottom: 2rem; border: 1px solid var(--border);">
+        <h4 style="margin-bottom: 1rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">Email Dispatch Configuration</h4>
+        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+          <div class="input-group" style="flex: 1; min-width: 280px;">
+            <label for="input-manager-email">Manager Recipient Email</label>
+            <input type="email" id="input-manager-email" placeholder="manager@example.com" class="glass">
+          </div>
+          <div class="input-group" style="flex: 2; min-width: 350px;">
+            <label>CC Tags (Click + or press Enter)</label>
+            <div id="cc-tags-container" class="cc-tags-container glass">
+              <input type="text" id="new-cc-input" placeholder="Add email...">
+              <button type="button" id="btn-add-cc" class="btn btn-primary btn-icon" style="height: 28px; width: 28px; padding: 0; flex-shrink: 0;">
+                <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
         <h2>Team Dashboard</h2>
         <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-          <input type="email" id="cc-email" placeholder="CC Emails (comma, separated)" class="glass" style="padding: 0.5rem 0.75rem; font-size: 0.875rem; min-width: 250px;" multiple>
           <button class="btn btn-outline" id="btn-export">
             <i data-lucide="download"></i> Export Excel
           </button>

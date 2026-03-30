@@ -328,3 +328,49 @@ input:checked + .slider:before {
   font-weight: 500;
   color: var(--text-muted);
 }
+
+/* CC Tag Component */
+.cc-tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  min-height: 44px;
+  align-items: center;
+}
+
+.cc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--primary);
+  color: white;
+  padding: 0.25rem 0.6rem;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+  animation: modalScale 0.2s ease-out;
+}
+
+.cc-tag .remove-btn {
+  cursor: pointer;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+}
+
+.cc-tag .remove-btn:hover {
+  opacity: 1;
+}
+
+#new-cc-input {
+  border: none !important;
+  background: transparent !important;
+  padding: 0.25rem !important;
+  flex: 1;
+  min-width: 120px;
+  outline: none !important;
+  box-shadow: none !important;
+}

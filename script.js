@@ -46,6 +46,9 @@ const customPercentInput = document.getElementById('custom-percent');
 const advanceAmountInput = document.getElementById('advance-amount');
 const supplierInput = document.getElementById('supplier');
 const supplierDatalist = document.getElementById('supplier-list');
+const poNumberInput = document.getElementById('po-number');
+const prSoInput = document.getElementById('pr-so-number');
+const notesInput = document.getElementById('notes');
 const entryForm = document.getElementById('entry-form');
 const poTbody = document.getElementById('po-tbody');
 const advanceTbody = document.getElementById('advance-tbody');
@@ -67,8 +70,12 @@ const toggleHistory = document.getElementById('toggle-history');
 // App State
 let dailySendTime = '14:00';
 let managerEmail = 'a.bazuhair@amco-saudi.com';
+let ccEmails = '';
+let ccEmailsArray = [];
 let isSendingNow = false;
 let showHistory = false;
+let editMode = false;
+let currentEditingId = null;
 
 // Core Functions
 async function init() {
@@ -88,6 +95,130 @@ async function init() {
 
   // Start the background timer (checks every 60 seconds)
   setInterval(checkSchedule, 60000);
+
+  // Bind CC Tag Events
+  const btnAddCc = document.getElementById('btn-add-cc');
+  const newCcInput = document.getElementById('new-cc-input');
+  if (btnAddCc) btnAddCc.addEventListener('click', addCcFromInput);
+  if (newCcInput) newCcInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCcFromInput();
+    }
+  });
+}
+
+// Edit Logic
+function startEdit(id) {
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+
+  editMode = true;
+  currentEditingId = id;
+  
+  // Fill Form
+  if (poDateSpan) poDateSpan.textContent = entry.date;
+  if (dateInput) dateInput.value = entry.date;
+  if (approvalTypeSelect) {
+    approvalTypeSelect.value = entry.type;
+    advanceFields.style.display = (entry.type === 'Advance Approval') ? 'grid' : 'none';
+  }
+  if (prSoInput) prSoInput.value = entry.prSo;
+  if (poNumberInput) poNumberInput.value = entry.po;
+  if (supplierInput) supplierInput.value = entry.supplier;
+  if (amountInput) amountInput.value = entry.amount;
+  if (currencySelect) currencySelect.value = entry.currency;
+  if (notesInput) notesInput.value = entry.notes || '';
+
+  if (entry.type === 'Advance Approval' && advancePercentSelect) {
+    const isPredefined = ['10', '20', '30', '50', '100'].includes(String(entry.advancePercent));
+    if (isPredefined) {
+      advancePercentSelect.value = entry.advancePercent;
+      customPercentGroup.style.display = 'none';
+    } else {
+      advancePercentSelect.value = 'custom';
+      customPercentGroup.style.display = 'block';
+      if (customPercentInput) customPercentInput.value = entry.advancePercent;
+    }
+  }
+
+  // Update UI
+  const logBtn = document.getElementById('btn-log-entry');
+  const cancelBtn = document.getElementById('btn-cancel-edit');
+  if (logBtn) {
+    logBtn.innerHTML = '<i data-lucide="save"></i> Update Entry Details';
+    logBtn.classList.remove('btn-primary');
+    logBtn.classList.add('btn-finalize');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+  if (cancelBtn) cancelBtn.style.display = 'block';
+  
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function cancelEdit() {
+  editMode = false;
+  currentEditingId = null;
+  entryForm.reset();
+  
+  const logBtn = document.getElementById('btn-log-entry');
+  const cancelBtn = document.getElementById('btn-cancel-edit');
+  if (logBtn) {
+    logBtn.innerHTML = '<i data-lucide="plus-circle"></i> Log Entry into Team Database';
+    logBtn.classList.add('btn-primary');
+    logBtn.classList.remove('btn-finalize');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  calculate();
+}
+
+// Add Cancel Event Listener in Init or global
+document.addEventListener('DOMContentLoaded', () => {
+    const cancelBtn = document.getElementById('btn-cancel-edit');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelEdit);
+});
+
+// CC Tag UI Logic
+function renderCcTags() {
+  const container = document.getElementById('cc-tags-container');
+  const input = document.getElementById('new-cc-input');
+  const btn = document.getElementById('btn-add-cc');
+  if (!container) return;
+
+  // Clear everything except input and button
+  const currentTags = container.querySelectorAll('.cc-tag');
+  currentTags.forEach(tag => tag.remove());
+
+  ccEmailsArray.forEach((email, index) => {
+    const tag = document.createElement('div');
+    tag.className = 'cc-tag';
+    tag.innerHTML = `
+      <span>${email}</span>
+      <span class="remove-btn" onclick="removeCcTag(${index})">
+        <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+      </span>
+    `;
+    container.insertBefore(tag, input);
+  });
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function addCcFromInput() {
+  const input = document.getElementById('new-cc-input');
+  const email = input.value.trim();
+  if (email && email.includes('@') && !ccEmailsArray.includes(email)) {
+    ccEmailsArray.push(email);
+    input.value = '';
+    renderCcTags();
+    updateSettings(); // Auto-save on add
+  }
+}
+
+function removeCcTag(index) {
+  ccEmailsArray.splice(index, 1);
+  renderCcTags();
+  updateSettings(); // Auto-save on remove
 }
 
 // Settings Logic
@@ -109,6 +240,11 @@ async function loadSettings() {
           managerEmail = s.value;
           if (inputManagerEmail) inputManagerEmail.value = managerEmail;
         }
+        if (s.key === 'cc_emails') {
+          ccEmails = s.value;
+          ccEmailsArray = ccEmails ? ccEmails.split(',').map(e => e.trim()).filter(e => e) : [];
+          renderCcTags();
+        }
       });
     }
   } catch (e) { console.error('Settings load error:', e); }
@@ -117,26 +253,31 @@ async function loadSettings() {
 async function updateSettings() {
   const newTime = inputSendTime ? inputSendTime.value : dailySendTime;
   const newEmail = inputManagerEmail ? inputManagerEmail.value.trim() : managerEmail;
-
+  const newCC = ccEmailsArray.join(',');
+  
   if (!newTime || !newEmail) return;
-
+  
   try {
-    showToast('Saving settings...', 'info');
+    // Show a smaller toast for auto-saves
     await supabaseClient
       .from('settings')
       .upsert([
         { key: 'daily_send_time', value: newTime },
-        { key: 'manager_email', value: newEmail }
+        { key: 'manager_email', value: newEmail },
+        { key: 'cc_emails', value: newCC }
       ], { onConflict: 'key' });
-
+    
     dailySendTime = newTime;
     managerEmail = newEmail;
+    ccEmails = newCC;
     if (displaySendTime) displaySendTime.textContent = format12h(newTime);
-    if (settingsModal) settingsModal.classList.remove('active');
-    showToast('Settings saved successfully!', 'success');
-  } catch (e) {
+    // Don't close modal if it's an auto-save from the dashboard
+    if (settingsModal && settingsModal.classList.contains('active')) {
+       settingsModal.classList.remove('active');
+       showToast('Settings saved successfully!', 'success');
+    }
+  } catch (e) { 
     console.error('Settings Update Error:', e);
-    showToast('Failed to save settings', 'error');
   }
 }
 
@@ -264,7 +405,6 @@ async function sendEmailToManager(isTest = false) {
 
   isSendingNow = true;
   const currentRecipient = managerEmail || "a.bazuhair@amco-saudi.com";
-  const ccEmail = document.getElementById('cc-email').value.trim();
   const btn = isTest ? btnTestSend : btnFinalize;
   const originalHtml = btn ? btn.innerHTML : 'Send';
 
@@ -308,17 +448,18 @@ async function sendEmailToManager(isTest = false) {
     });
     if (advanceEntries.length > 0) advHtml += `</table>`;
 
-    const totalAdvance = advanceEntries.reduce((acc, curr) => acc + curr.advanceAmount, 0);
+    // Calculation for Summary Box
+    const totalAdvanceOnly = advanceEntries.reduce((acc, curr) => acc + curr.advanceAmount, 0);
 
     const templateParams = {
       to_name: "",
       to_email: currentRecipient,
-      cc_email: ccEmail || "",
-      message: isTest ? "[TEST SEND] Current summary sample below:" : "Please find the procurement summary for GM review:",
+      cc_email: ccEmails || "",
+      message: isTest ? "[TEST SEND] Review current item summary below:" : "Please find the final daily procurement summary for GM review:",
       po_table: poHtml,
       advance_table: advHtml,
       summary_count: entries.length,
-      total_sar: totalAdvance.toLocaleString()
+      total_sar: totalAdvanceOnly.toLocaleString()
     };
 
     if (EMAILJS_PUBLIC_KEY === 'YOUR_EMAILJS_PUBLIC_KEY' || !EMAILJS_PUBLIC_KEY) {
@@ -436,7 +577,12 @@ function renderDashboard() {
       <td style="color: var(--text-muted); font-style: italic; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.notes || ''}">
         ${e.notes || '-'}
       </td>
-      <td style="text-align: right;">${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon"><i data-lucide="trash-2"></i></button>` : ''}</td>
+      <td style="text-align: right; white-space: nowrap;">
+        ${!e.is_sent ? `
+          <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" title="Edit Entry"><i data-lucide="edit-3" style="width: 14px; height: 14px;"></i></button>
+          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" title="Delete Entry"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+        ` : ''}
+      </td>
     </tr>
   `).join('');
 
@@ -449,10 +595,79 @@ function renderDashboard() {
       <td style="color: var(--text-muted); font-style: italic; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.notes || ''}">
         ${e.notes || '-'}
       </td>
-      <td style="text-align: right;">${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon"><i data-lucide="trash-2"></i></button>` : ''}</td>
+      <td style="text-align: right; white-space: nowrap;">
+        ${!e.is_sent ? `
+          <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" title="Edit Entry"><i data-lucide="edit-3" style="width: 14px; height: 14px;"></i></button>
+          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" title="Delete Entry"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+        ` : ''}
+      </td>
     </tr>
   `).join('');
-  lucide.createIcons();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// Form Handlers
+async function createEntry(e) {
+  e.preventDefault();
+  if (!supabaseClient) return;
+
+  const type = approvalTypeSelect.value;
+  const supplier = supplierInput.value.trim();
+  const prSo = prSoInput.value.trim();
+  const po = poNumberInput.value.trim();
+  const date = poDateSpan.textContent;
+
+  if (!supplier || !prSo || !po) {
+    showToast('Please fill all required fields', 'warning');
+    return;
+  }
+
+  const amount = parseFloat(amountInput.value) || 0;
+  const advancePercentValue = approvalTypeSelect.value === 'Advance Approval' ?
+    (advancePercentSelect.value === 'custom' ? parseFloat(customPercentInput.value) : parseFloat(advancePercentSelect.value)) : 0;
+
+  const entryData = {
+    type,
+    supplier,
+    prSo,
+    po,
+    date,
+    amount,
+    currency: currencySelect.value,
+    amountSar: parseFloat(amountSarInput.value) || 0,
+    advancePercent: advancePercentValue,
+    advanceAmount: parseFloat(advanceAmountInput.value) || 0,
+    advanceAmountOriginal: (amount * advancePercentValue) / 100,
+    notes: notesInput.value,
+    status: 'Pending',
+    is_sent: false
+  };
+
+  try {
+    showToast(editMode ? 'Updating entry...' : 'Saving entry...', 'info');
+    
+    let result;
+    if (editMode && currentEditingId) {
+      result = await supabaseClient
+        .from('entries')
+        .update(entryData)
+        .eq('id', currentEditingId);
+    } else {
+      result = await supabaseClient
+        .from('entries')
+        .insert([entryData]);
+    }
+
+    if (result.error) throw result.error;
+    
+    showToast(editMode ? 'Entry updated successfully!' : 'Entry logged successfully!', 'success');
+    cancelEdit(); // Resets mode and form
+    await loadEntries();
+    updateSupplierDatalist();
+  } catch (err) {
+    console.error('Database Error:', err);
+    showToast('Operation failed', 'error');
+  }
 }
 
 if (btnExport) btnExport.addEventListener('click', () => {
