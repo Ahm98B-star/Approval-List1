@@ -212,7 +212,7 @@ function renderDashboard() {
   if (poTbody) poTbody.innerHTML = poData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td>
-      <td>${e.amountSar.toLocaleString()}</td><td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
+      <td>${(e.amountSar || 0).toLocaleString()}</td><td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td style="text-align:right;">
         ${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
       </td>
@@ -221,7 +221,7 @@ function renderDashboard() {
 
   if (advanceTbody) advanceTbody.innerHTML = advData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
-      <td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.advanceAmount.toLocaleString()}</td>
+      <td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.advanceAmount || 0).toLocaleString()}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td style="text-align:right;">
         ${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
@@ -248,12 +248,16 @@ async function sendEmailToManager(isTest = false) {
     const pos = pending.filter(e => e.type === 'PO Approval');
     const advs = pending.filter(e => e.type === 'Advance Approval');
     
-    let poH = pos.length ? `<h3>📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;">` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()} SAR</td></tr>`);
+    // Header for PO Table
+    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th></tr>` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
     if(pos.length) poH += `</table>`;
 
-    let advH = advs.length ? `<h3>💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;">` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.advanceAmount.toLocaleString()} SAR</td></tr>`);
+    // Header for Advance Table
+    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th></tr>` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
     if(advs.length) advH += `</table>`;
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
@@ -262,7 +266,7 @@ async function sendEmailToManager(isTest = false) {
       po_table: poH,
       advance_table: advH,
       summary_count: pending.length,
-      total_sar: (pending.reduce((a,b)=>a+(b.type==='PO Approval'?b.amountSar:b.advanceAmount),0)).toLocaleString()
+      total_sar: (pending.reduce((a,b)=>a+(b.type==='PO Approval'?(b.amountSar || 0):(b.advanceAmount || 0)),0)).toLocaleString()
     });
 
     if (!isTest) {
@@ -331,7 +335,13 @@ if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(
 if (btnExport) btnExport.addEventListener('click', () => {
   if (entries.length === 0) return showToast('No table data', 'error');
   const wb = XLSX.utils.book_new();
-  const mapD = (e) => ({ Date: e.date, 'PR/SO': e.prSo, PO: e.po, Supplier: e.supplier, SAR: e.amountSar });
+  const mapD = (e) => ({ 
+    Date: e.date, 
+    'PR/SO': e.prSo || '-', 
+    PO: e.po || '-', 
+    Supplier: e.supplier || '-', 
+    SAR: (e.amountSar || 0) 
+  });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='PO Approval').map(mapD)), "PO");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='Advance Approval').map(mapD)), "Advance");
   XLSX.writeFile(wb, `Approvals_${new Date().toISOString().split('T')[0]}.xlsx`);
