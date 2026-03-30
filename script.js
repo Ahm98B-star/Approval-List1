@@ -1,6 +1,6 @@
 /**
- * Approval System Management Tool - Final Unified Stable Script
- * This version includes: Edits, CC Tags, Logic Engine, and Detailed Error Tracking.
+ * Approval System Management Tool
+ * Stable Version (Pre-CC Tag Updates)
  */
 
 // --- STATE MANAGEMENT ---
@@ -32,7 +32,6 @@ const exchangeRates = {
 
 // --- UI ELEMENTS ---
 const poDateSpan = document.getElementById('po-date');
-const dateInput = document.getElementById('date-input');
 const approvalTypeSelect = document.getElementById('approval-type');
 const advanceFields = document.getElementById('advance-fields');
 const amountInput = document.getElementById('amount');
@@ -52,20 +51,15 @@ const btnFinalize = document.getElementById('btn-finalize');
 const themeToggle = document.getElementById('theme-toggle');
 const poNumberInput = document.getElementById('po-number');
 const prSoInput = document.getElementById('pr-so-number');
-const notesInput = document.getElementById('notes');
 
-// Dispatch Bar
-const inputManagerEmail = document.getElementById('input-manager-email');
-const ccTagsContainer = document.getElementById('cc-tags-container');
-const newCcInput = document.getElementById('new-cc-input');
-const btnAddCc = document.getElementById('btn-add-cc');
-
-// Settings
+// Settings Elements
 const settingsModal = document.getElementById('settings-modal');
 const btnSettings = document.getElementById('btn-settings');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const inputSendTime = document.getElementById('input-send-time');
+const inputManagerEmail = document.getElementById('input-manager-email');
+const inputCcEmails = document.getElementById('input-cc-emails');
 const displaySendTime = document.getElementById('display-send-time');
 const toggleHistory = document.getElementById('toggle-history');
 const btnTestSend = document.getElementById('btn-test-send');
@@ -74,11 +68,8 @@ const btnTestSend = document.getElementById('btn-test-send');
 let dailySendTime = '14:00';
 let managerEmail = 'a.bazuhair@amco-saudi.com';
 let ccEmails = '';
-let ccEmailsArray = [];
 let isSendingNow = false;
 let showHistory = false;
-let editMode = false;
-let currentEditingId = null;
 
 // --- INITIALIZE ---
 async function init() {
@@ -86,7 +77,6 @@ async function init() {
   updateThemeIcons();
   const today = new Date().toISOString().split('T')[0];
   if (poDateSpan) poDateSpan.textContent = today;
-  if (dateInput) dateInput.value = today;
   if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
   await loadSettings();
   await loadEntries();
@@ -101,13 +91,14 @@ async function loadEntries() {
   let query = supabaseClient.from('entries').select('*');
   if (!showHistory) query = query.eq('is_sent', false);
   const { data, error } = await query.order('created_at', { ascending: false });
-  if (error) console.error("Load Entries Error:", error);
-  else {
+  if (error) {
+    console.error("Load Entries Error:", error);
+    showToast('Failed to load table', 'error');
+  } else {
     entries = data.map(i => ({
       id: i.id, type: i.approval_type, date: i.po_date, prSo: i.pr_so_number, po: i.po_number,
       supplier: i.supplier, amount: i.amount, currency: i.currency, amountSar: i.amount_sar,
       advancePercent: i.advance_percent, advanceAmount: i.advance_amount, 
-      advanceAmountOriginal: i.advance_amount_original, notes: i.notes, 
       status: i.status, is_sent: i.is_sent
     }));
     renderDashboard();
@@ -117,8 +108,6 @@ async function loadEntries() {
 async function createEntry(e) {
   e.preventDefault();
   if (!supabaseClient) return;
-
-  // 1. Prepare the standard payload
   const entryData = {
     approval_type: approvalTypeSelect.value, 
     pr_so_number: prSoInput.value, 
@@ -127,51 +116,21 @@ async function createEntry(e) {
     amount: parseFloat(amountInput.value) || 0, 
     currency: currencySelect.value,
     amount_sar: parseFloat(amountSarInput.value) || 0, 
-    notes: notesInput.value,
     advance_percent: parseFloat(advancePercentSelect.value) || 0,
     advance_amount: parseFloat(advanceAmountInput.value) || 0,
-    advance_amount_original: (parseFloat(amountInput.value) * (parseFloat(advancePercentSelect.value)||0))/100,
     po_date: poDateSpan.textContent, 
     is_sent: false, 
     status: 'Pending'
   };
-
   try {
-    showToast(editMode ? 'Updating...' : 'Logging...', 'info');
-    
-    // 2. Execute the query
-    const { error } = editMode 
-      ? await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId)
-      : await supabaseClient.from('entries').insert([entryData]);
-
-    if (error) {
-      // 3. SMART FAIL-SAFE: If a specific column is missing, try a simpler version
-      if (error.message.includes('column') && error.message.includes('does not exist')) {
-        console.warn("Retrying with simplified schema due to mismatch:", error.message);
-        
-        // Remove the "newer" columns and try a basic insert
-        const safeData = { ...entryData };
-        delete safeData.notes;
-        delete safeData.advance_amount_original;
-        
-        const retry = editMode 
-          ? await supabaseClient.from('entries').update(safeData).eq('id', currentEditingId)
-          : await supabaseClient.from('entries').insert([safeData]);
-          
-        if (retry.error) throw retry.error;
-        showToast('Logged (Notes skipped - Add columns to SQL)', 'warning');
-      } else {
-        throw error;
-      }
-    } else {
-      showToast('Success!', 'success');
-    }
-
-    cancelEdit();
+    const { error } = await supabaseClient.from('entries').insert([entryData]);
+    if (error) throw error;
+    showToast('Logged Successfully!', 'success');
+    entryForm.reset();
+    calculate();
     await loadEntries();
   } catch (err) { 
-    console.error('DB ERROR:', err);
-    showToast('DB Error: ' + (err.message || 'Check Console'), 'error'); 
+    showToast('Database Error: ' + (err.message || 'Check connection'), 'error'); 
   }
 }
 
@@ -182,7 +141,7 @@ async function deleteEntry(id) {
     if (error) throw error;
     showToast('Deleted', 'warning');
     await loadEntries();
-  } catch (e) { showToast('DB Error: ' + (e.message || 'Fail'), 'error'); }
+  } catch (e) { showToast('Delete Failed', 'error'); }
 }
 
 // --- CALCULATION ENGINE ---
@@ -199,7 +158,7 @@ function calculate() {
   }
 }
 
-// --- SETTINGS & CC LOGIC ---
+// --- SETTINGS LOGIC ---
 async function loadSettings() {
   if (!supabaseClient) return;
   const { data } = await supabaseClient.from('settings').select('*');
@@ -216,8 +175,7 @@ async function loadSettings() {
       }
       if (s.key === 'cc_emails') {
         ccEmails = s.value;
-        ccEmailsArray = ccEmails ? ccEmails.split(',').map(e => e.trim()).filter(e=>e) : [];
-        renderCcTags();
+        if (inputCcEmails) inputCcEmails.value = s.value;
       }
     });
   }
@@ -225,57 +183,21 @@ async function loadSettings() {
 
 async function updateSettings() {
   if (!supabaseClient) return;
-  const newTime = inputSendTime ? inputSendTime.value : dailySendTime;
-  const newEmail = inputManagerEmail ? inputManagerEmail.value.trim() : managerEmail;
-  const newCC = ccEmailsArray.join(',');
+  const newTime = inputSendTime.value;
+  const newEmail = inputManagerEmail.value.trim();
+  const newCC = inputCcEmails.value.trim();
   try {
-    const { error } = await supabaseClient.from('settings').upsert([
+    await supabaseClient.from('settings').upsert([
       { key: 'daily_send_time', value: newTime },
       { key: 'manager_email', value: newEmail },
       { key: 'cc_emails', value: newCC }
     ], { onConflict: 'key' });
-    
-    if (error) throw error;
-
     dailySendTime = newTime; managerEmail = newEmail; ccEmails = newCC;
     if (displaySendTime) displaySendTime.textContent = format12h(newTime);
-    if (settingsModal.classList.contains('active')) {
-      settingsModal.classList.remove('active');
-      showToast('Settings Saved', 'success');
-    }
-  } catch (e) { 
-    console.error('Settings Error:', e);
-    showToast('DB Error: ' + (e.message || 'Settings Fail'), 'error'); 
-  }
+    settingsModal.classList.remove('active');
+    showToast('Settings Saved', 'success');
+  } catch (e) { showToast('Save Failed', 'error'); }
 }
-
-function renderCcTags() {
-  if (!ccTagsContainer || !newCcInput) return;
-  ccTagsContainer.querySelectorAll('.cc-tag').forEach(t => t.remove());
-  ccEmailsArray.forEach((email, index) => {
-    const tag = document.createElement('div');
-    tag.className = 'cc-tag';
-    tag.innerHTML = `<span>${email}</span><span class="remove-btn" onclick="removeCcTag(${index})"><i data-lucide="x" style="width:14px;"></i></span>`;
-    ccTagsContainer.insertBefore(tag, newCcInput);
-  });
-  if (typeof lucide !== 'undefined') lucide.createIcons();
-}
-
-function addCcFromInput() {
-  const email = newCcInput.value.trim();
-  if (email && email.includes('@') && !ccEmailsArray.includes(email)) {
-    ccEmailsArray.push(email);
-    newCcInput.value = '';
-    renderCcTags();
-    updateSettings();
-  }
-}
-
-window.removeCcTag = function(i) {
-  ccEmailsArray.splice(i, 1);
-  renderCcTags();
-  updateSettings();
-};
 
 // --- UI HELPERS ---
 function renderDashboard() {
@@ -285,10 +207,9 @@ function renderDashboard() {
   if (poTbody) poTbody.innerHTML = poData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td>
-      <td>${e.amountSar.toLocaleString()}</td><td>● ${e.is_sent ? 'SENT' : 'Pending'}</td><td>${e.notes||''}</td>
-      <td style="text-align:right;white-space:nowrap;">
-        ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
-        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
+      <td>${e.amountSar.toLocaleString()}</td><td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
+      <td style="text-align:right;">
+        ${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
       </td>
     </tr>
   `).join('');
@@ -296,44 +217,15 @@ function renderDashboard() {
   if (advanceTbody) advanceTbody.innerHTML = advData.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.advanceAmount.toLocaleString()}</td>
-      <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td><td>${e.notes||''}</td>
-      <td style="text-align:right;white-space:nowrap;">
-        ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
-        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
+      <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
+      <td style="text-align:right;">
+        ${!e.is_sent ? `<button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
       </td>
     </tr>
   `).join('');
   if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-window.startEdit = function(id) {
-  const e = entries.find(x => x.id === id);
-  if (!e) return;
-  editMode = true; currentEditingId = id;
-  if (poDateSpan) poDateSpan.textContent = e.date;
-  if (approvalTypeSelect) approvalTypeSelect.value = e.type;
-  if (prSoInput) prSoInput.value = e.prSo;
-  if (poNumberInput) poNumberInput.value = e.po;
-  if (supplierInput) supplierInput.value = e.supplier;
-  if (amountInput) amountInput.value = e.amount;
-  if (currencySelect) currencySelect.value = e.currency;
-  if (notesInput) notesInput.value = e.notes||'';
-  if (advanceFields) advanceFields.style.display = e.type === 'Advance Approval' ? 'grid' : 'none';
-  const logBtn = document.getElementById('btn-log-entry');
-  if (logBtn) logBtn.innerHTML = '<i data-lucide="save"></i> Update Entry';
-  calculate();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-};
-
-function cancelEdit() {
-  editMode = false; currentEditingId = null;
-  entryForm.reset();
-  const logBtn = document.getElementById('btn-log-entry');
-  if (logBtn) logBtn.innerHTML = '<i data-lucide="plus-circle"></i> Log Entry into Team Database';
-  calculate();
-}
-
-// --- EMAIL ENGINE ---
 async function checkSchedule() {
   const now = new Date();
   const time = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
@@ -351,18 +243,15 @@ async function sendEmailToManager(isTest = false) {
     const pos = pending.filter(e => e.type === 'PO Approval');
     const advs = pending.filter(e => e.type === 'Advance Approval');
     
-    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amount.toLocaleString()}</td><td>${e.currency}</td><td><b>${e.amountSar.toLocaleString()}</b></td><td>${e.notes||'-'}</td></tr>`);
+    let poH = pos.length ? `<h3>📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;">` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()} SAR</td></tr>`);
     if(pos.length) poH += `</table>`;
 
-    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th><th>Adv (Original)</th><th>Notes</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${e.advanceAmount.toLocaleString()}</b></td><td>${e.advanceAmountOriginal ? e.advanceAmountOriginal.toLocaleString() : '0'} ${e.currency}</td><td>${e.notes||'-'}</td></tr>`);
+    let advH = advs.length ? `<h3>💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;">` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.advanceAmount.toLocaleString()} SAR</td></tr>`);
     if(advs.length) advH += `</table>`;
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-      to_name: "",
       to_email: managerEmail,
       cc_email: ccEmails,
       po_table: poH,
@@ -375,12 +264,11 @@ async function sendEmailToManager(isTest = false) {
       await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(e=>e.id));
       await loadEntries();
     }
-    showToast('Success!', 'success');
-  } catch (e) { console.error(e); showToast('Email failed', 'error'); }
+    showToast('Email Sent Successfully!', 'success');
+  } catch (e) { showToast('Email Failed', 'error'); }
   finally { if(btn) { btn.disabled = false; btn.innerHTML = original; } isSendingNow = false; }
 }
 
-// --- UTILS ---
 function format12h(t) {
   const [h, m] = t.split(':');
   return `${((h%12)||12)}:${m} ${h>=12?'PM':'AM'}`;
@@ -429,25 +317,19 @@ if (advancePercentSelect) advancePercentSelect.addEventListener('change', () => 
   customPercentGroup.style.display = advancePercentSelect.value === 'custom' ? 'block' : 'none';
   calculate();
 });
-if (customPercentInput) customPercentInput.addEventListener('input', calculate);
-if (btnAddCc) btnAddCc.addEventListener('click', addCcFromInput);
-if (newCcInput) newCcInput.addEventListener('keydown', e => e.key==='Enter' && (e.preventDefault(), addCcFromInput()));
-if (inputManagerEmail) inputManagerEmail.addEventListener('change', updateSettings);
 if (btnSettings) btnSettings.addEventListener('click', () => settingsModal.classList.add('active'));
 if (btnCloseSettings) btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
 if (btnSaveSettings) btnSaveSettings.addEventListener('click', updateSettings);
 if (toggleHistory) toggleHistory.addEventListener('change', e => { showHistory = e.target.checked; loadEntries(); });
-if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(false));
-if (btnTestSend) btnTestSend.addEventListener('click', () => sendEmailToManager(true));
 if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(false));
 if (btnExport) btnExport.addEventListener('click', () => {
-  if (entries.length === 0) return showToast('No data', 'error');
+  if (entries.length === 0) return showToast('No table data', 'error');
   const wb = XLSX.utils.book_new();
-  const mapD = (e) => ({ Date: e.date, 'PR/SO': e.prSo, PO: e.po, Supplier: e.supplier, SAR: e.amountSar, Status: e.status });
+  const mapD = (e) => ({ Date: e.date, 'PR/SO': e.prSo, PO: e.po, Supplier: e.supplier, SAR: e.amountSar });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='PO Approval').map(mapD)), "PO");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='Advance Approval').map(mapD)), "Advance");
   XLSX.writeFile(wb, `Approvals_${new Date().toISOString().split('T')[0]}.xlsx`);
 });
 
-// Start
 init();
