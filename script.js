@@ -65,7 +65,7 @@ const inputManagerEmail = document.getElementById('input-manager-email');
 const toggleHistory = document.getElementById('toggle-history');
 
 // App State
-let dailySendTime = '14:00'; 
+let dailySendTime = '14:00';
 let managerEmail = 'a.bazuhair@amco-saudi.com';
 let isSendingNow = false;
 let showHistory = false;
@@ -74,7 +74,7 @@ let showHistory = false;
 async function init() {
   document.documentElement.setAttribute('data-theme', currentTheme);
   updateThemeIcons();
-  
+
   const today = new Date().toISOString().split('T')[0];
   if (!dateInput.value) {
     poDateSpan.textContent = today;
@@ -85,7 +85,7 @@ async function init() {
   await loadEntries();
   updateSupplierDatalist();
   subscribeToChanges();
-  
+
   // Start the background timer (checks every 60 seconds)
   setInterval(checkSchedule, 60000);
 }
@@ -97,7 +97,7 @@ async function loadSettings() {
     const { data, error } = await supabaseClient
       .from('settings')
       .select('key, value');
-    
+
     if (data) {
       data.forEach(s => {
         if (s.key === 'daily_send_time') {
@@ -117,9 +117,9 @@ async function loadSettings() {
 async function updateSettings() {
   const newTime = inputSendTime ? inputSendTime.value : dailySendTime;
   const newEmail = inputManagerEmail ? inputManagerEmail.value.trim() : managerEmail;
-  
+
   if (!newTime || !newEmail) return;
-  
+
   try {
     showToast('Saving settings...', 'info');
     await supabaseClient
@@ -128,15 +128,15 @@ async function updateSettings() {
         { key: 'daily_send_time', value: newTime },
         { key: 'manager_email', value: newEmail }
       ], { onConflict: 'key' });
-    
+
     dailySendTime = newTime;
     managerEmail = newEmail;
     if (displaySendTime) displaySendTime.textContent = format12h(newTime);
     if (settingsModal) settingsModal.classList.remove('active');
     showToast('Settings saved successfully!', 'success');
-  } catch (e) { 
+  } catch (e) {
     console.error('Settings Update Error:', e);
-    showToast('Failed to save settings', 'error'); 
+    showToast('Failed to save settings', 'error');
   }
 }
 
@@ -151,7 +151,7 @@ function format12h(time24) {
 async function checkSchedule() {
   const now = new Date();
   const current24h = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  
+
   if (current24h === dailySendTime && !isSendingNow && entries.length > 0) {
     console.log('Auto-send triggered!');
     await sendEmailToManager(false); // Automated send
@@ -180,7 +180,7 @@ async function loadEntries() {
     if (!showHistory) {
       query = query.eq('is_sent', false);
     }
-    
+
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
 
@@ -219,7 +219,7 @@ async function createEntry(status = 'Logged') {
   }
 
   const amount = parseFloat(amountInput.value) || 0;
-  const advancePercentValue = approvalTypeSelect.value === 'Advance Approval' ? 
+  const advancePercentValue = approvalTypeSelect.value === 'Advance Approval' ?
     (advancePercentSelect.value === 'custom' ? parseFloat(customPercentInput.value) : parseFloat(advancePercentSelect.value)) : 0;
 
   const entryData = {
@@ -280,7 +280,7 @@ async function sendEmailToManager(isTest = false) {
       <tr style="background: #f1f5f9; color: #1e293b; text-align: left; font-size: 11px;">
         <th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Amount</th><th>Curr</th><th>SAR</th><th>Notes</th>
       </tr>` : "";
-    
+
     poEntries.forEach(e => {
       poHtml += `<tr style="font-size: 11px; border-bottom: 1px solid #f1f5f9;">
         <td>${e.date}</td><td>${e.prSo}</td><td>${e.po}</td><td>${e.supplier}</td>
@@ -296,7 +296,7 @@ async function sendEmailToManager(isTest = false) {
       <tr style="background: #f1f5f9; color: #1e293b; text-align: left; font-size: 11px;">
         <th>Date</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>SAR (Full)</th><th>Adv %</th><th>Adv Amount (SAR)</th><th>Adv (Orig)</th><th>Notes</th>
       </tr>` : "";
-    
+
     advanceEntries.forEach(e => {
       const origAdvFormatted = e.advanceAmountOriginal ? `${e.advanceAmountOriginal.toLocaleString()} ${e.currency}` : '-';
       advHtml += `<tr style="font-size: 11px; border-bottom: 1px solid #f1f5f9;">
@@ -311,9 +311,9 @@ async function sendEmailToManager(isTest = false) {
     const totalAdvance = advanceEntries.reduce((acc, curr) => acc + curr.advanceAmount, 0);
 
     const templateParams = {
-      to_name: "General Manager",
+      to_name: "",
       to_email: currentRecipient,
-      cc_email: ccEmail || "", 
+      cc_email: ccEmail || "",
       message: isTest ? "[TEST SEND] Current summary sample below:" : "Please find the procurement summary for GM review:",
       po_table: poHtml,
       advance_table: advHtml,
@@ -394,7 +394,7 @@ function updateThemeIcons() {
 if (poDateSpan) poDateSpan.addEventListener('click', () => { dateInput.style.display = 'block'; dateInput.focus(); });
 if (dateInput) dateInput.addEventListener('change', () => { poDateSpan.textContent = dateInput.value; dateInput.style.display = 'none'; });
 if (approvalTypeSelect) approvalTypeSelect.addEventListener('change', (e) => {
-    advanceFields.style.display = (e.target.value === 'Advance Approval') ? 'grid' : 'none';
+  advanceFields.style.display = (e.target.value === 'Advance Approval') ? 'grid' : 'none';
 });
 
 function calculate() {
@@ -413,8 +413,8 @@ function calculate() {
 
 [amountInput, currencySelect, advancePercentSelect, customPercentInput].forEach(el => { if (el) el.addEventListener('input', calculate); });
 if (advancePercentSelect) advancePercentSelect.addEventListener('change', () => {
-    customPercentGroup.style.display = advancePercentSelect.value === 'custom' ? 'block' : 'none';
-    calculate();
+  customPercentGroup.style.display = advancePercentSelect.value === 'custom' ? 'block' : 'none';
+  calculate();
 });
 
 function updateSupplierDatalist() {
@@ -456,12 +456,12 @@ function renderDashboard() {
 }
 
 if (btnExport) btnExport.addEventListener('click', () => {
-    if (entries.length === 0) return showToast('No data to export!', 'error');
-    const wb = XLSX.utils.book_new();
-    const mapData = (e) => ({ 'Date': e.date, 'PR/SO': e.prSo, 'PO': e.po, 'Supplier': e.supplier, 'SAR': e.amountSar, 'Adv%': e.advancePercent, 'Status': e.status });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e => e.type === 'PO Approval').map(mapData)), "PO");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e => e.type === 'Advance Approval').map(mapData)), "Advance");
-    XLSX.writeFile(wb, `Approval_System_${new Date().toISOString().split('T')[0]}.xlsx`);
+  if (entries.length === 0) return showToast('No data to export!', 'error');
+  const wb = XLSX.utils.book_new();
+  const mapData = (e) => ({ 'Date': e.date, 'PR/SO': e.prSo, 'PO': e.po, 'Supplier': e.supplier, 'SAR': e.amountSar, 'Adv%': e.advancePercent, 'Status': e.status });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e => e.type === 'PO Approval').map(mapData)), "PO");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e => e.type === 'Advance Approval').map(mapData)), "Advance");
+  XLSX.writeFile(wb, `Approval_System_${new Date().toISOString().split('T')[0]}.xlsx`);
 });
 
 function showToast(message, type = 'info') {
