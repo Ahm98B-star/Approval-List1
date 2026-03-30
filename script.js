@@ -14,6 +14,15 @@ try {
   console.error("Supabase Initialization Error:", e);
 }
 
+// --- EMAILJS CONFIGURATION ---
+const EMAILJS_PUBLIC_KEY = 'YOUR_EMAILJS_PUBLIC_KEY'; 
+const EMAILJS_SERVICE_ID = 'YOUR_SERVICE_ID';
+const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';
+
+if (typeof emailjs !== 'undefined') {
+  emailjs.init(EMAILJS_PUBLIC_KEY);
+}
+
 // Configuration (Approximate rates to SAR - Updated for 2026)
 const exchangeRates = {
   SAR: 1, USD: 3.75, EUR: 4.02, GBP: 4.75, AED: 1.02, QAR: 1.03, KWD: 12.20, BHD: 9.95, OMR: 9.74,
@@ -23,7 +32,7 @@ const exchangeRates = {
   BRL: 0.75, ZAR: 0.20, RUB: 0.041, ILS: 1.01, TWD: 0.12, CZK: 0.16, HUF: 0.010, PLN: 0.94, LBP: 0.00004
 };
 
-// UI Elements
+// // UI Elements
 const poDateSpan = document.getElementById('po-date');
 const dateInput = document.getElementById('date-input');
 const approvalTypeSelect = document.getElementById('approval-type');
@@ -41,40 +50,120 @@ const entryForm = document.getElementById('entry-form');
 const poTbody = document.getElementById('po-tbody');
 const advanceTbody = document.getElementById('advance-tbody');
 const btnExport = document.getElementById('btn-export');
+const btnFinalize = document.getElementById('btn-finalize');
 const themeToggle = document.getElementById('theme-toggle');
+
+// New Scheduled Elements
+const settingsModal = document.getElementById('settings-modal');
+const btnSettings = document.getElementById('btn-settings');
+const btnCloseSettings = document.getElementById('btn-close-settings');
+const btnSaveSettings = document.getElementById('btn-save-settings');
+const btnTestSend = document.getElementById('btn-test-send');
+const inputSendTime = document.getElementById('input-send-time');
+const displaySendTime = document.getElementById('display-send-time');
+
+// App State
+let dailySendTime = '14:00'; 
+let isSendingNow = false;
 
 // Core Functions
 async function init() {
   document.documentElement.setAttribute('data-theme', currentTheme);
   updateThemeIcons();
-
+  
   const today = new Date().toISOString().split('T')[0];
   if (!dateInput.value) {
     poDateSpan.textContent = today;
     dateInput.value = today;
   }
 
+  await loadSettings();
   await loadEntries();
   updateSupplierDatalist();
+  subscribeToChanges();
+  
+  // Start the background timer (checks every 60 seconds)
+  setInterval(checkSchedule, 60000);
+}
+
+// Settings Logic
+async function loadSettings() {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('settings')
+      .select('value')
+      .eq('key', 'daily_send_time')
+      .single();
+    
+    if (data) {
+      dailySendTime = data.value;
+      inputSendTime.value = dailySendTime;
+      displaySendTime.textContent = format12h(dailySendTime);
+    }
+  } catch (e) { console.error('Settings load error:', e); }
+}
+
+async function updateSettings() {
+  const newTime = inputSendTime.value;
+  if (!newTime) return;
+  
+  try {
+    showToast('Saving settings...', 'info');
+    await supabaseClient
+      .from('settings')
+      .upsert({ key: 'daily_send_time', value: newTime }, { onConflict: 'key' });
+    
+    dailySendTime = newTime;
+    displaySendTime.textContent = format12h(newTime);
+    settingsModal.classList.remove('active');
+    showToast('Schedule updated!', 'success');
+  } catch (e) { showToast('Failed to save settings', 'error'); }
+}
+
+function format12h(time24) {
+  const [h, m] = time24.split(':');
+  const hr = parseInt(h);
+  return `${hr % 12 || 12}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
+}
+
+// Scheduling Logic
+async function checkSchedule() {
+  const now = new Date();
+  const current24h = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  
+  if (current24h === dailySendTime && !isSendingNow && entries.length > 0) {
+    console.log('Auto-send triggered!');
+    await sendEmailToManager(false); // Automated send
+  }
+}
+
+// Real-time Subscription
+function subscribeToChanges() {
+  if (!supabaseClient) return;
+  supabaseClient
+    .channel('schema-db-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, (payload) => {
+      loadEntries();
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'settings' }, (payload) => {
+      loadSettings();
+    })
+    .subscribe();
 }
 
 // Load Entries (Supabase)
 async function loadEntries() {
-  if (!supabaseClient) {
-    showToast('Supabase Client not initialized. Check your credentials.', 'error');
-    return;
-  }
+  if (!supabaseClient) return;
   try {
-    showToast('Connecting to Supabase...', 'info');
+    // Only load entries that HAVE NOT been sent
     const { data, error } = await supabaseClient
       .from('entries')
       .select('*')
+      .eq('is_sent', false)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Supabase fetch error:', error);
-      throw error;
-    }
+    if (error) throw error;
 
     entries = data.map(item => ({
       id: item.id,
@@ -95,9 +184,7 @@ async function loadEntries() {
     }));
   } catch (err) {
     console.error('Supabase Load Error:', err);
-    showToast('Error: Could not load data from Supabase!', 'error');
-    // Fallback to local storage if needed for offline inspection
-    entries = JSON.parse(localStorage.getItem('approval_entries')) || [];
+    entries = [];
   }
   renderDashboard();
 }
@@ -112,7 +199,7 @@ async function createEntry(status = 'Logged') {
   }
 
   const amount = parseFloat(amountInput.value) || 0;
-  const advancePercentValue = approvalTypeSelect.value === 'Advance Approval' ?
+  const advancePercentValue = approvalTypeSelect.value === 'Advance Approval' ? 
     (advancePercentSelect.value === 'custom' ? parseFloat(customPercentInput.value) : parseFloat(advancePercentSelect.value)) : 0;
 
   const entryData = {
@@ -128,61 +215,132 @@ async function createEntry(status = 'Logged') {
     advance_amount: parseFloat(advanceAmountInput.value) || 0,
     advance_amount_original: (amount * advancePercentValue) / 100,
     notes: document.getElementById('notes').value,
-    status: status
+    status: status,
+    is_sent: false
   };
 
   try {
     if (!supabaseClient) throw new Error('Supabase client not initialized');
     
-    showToast('Saving to Supabase...', 'info');
-    const { data, error } = await supabaseClient
+    showToast('Saving to Team Database...', 'info');
+    const { error } = await supabaseClient
       .from('entries')
       .insert([entryData]);
 
-    if (error) {
-      console.error('Supabase insert error:', error);
-      throw error;
-    }
+    if (error) throw error;
 
-    showToast('Successfully saved to team database!', 'success');
-    await loadEntries();
-
-    // Reset form
+    showToast('Successfully logged to central database!', 'success');
     entryForm.reset();
-    init(); // Refresh defaults
+    init();
   } catch (err) {
     console.error('Supabase Save Error:', err);
-    showToast('Fatal error: Could not save to Supabase!', 'error');
+    showToast('Fatal error: Could not save to Database!', 'error');
+  }
+}
+
+// Email Batch Logic
+async function sendEmailToManager(isTest = false) {
+  if (entries.length === 0) {
+    if (!isTest) return; // Don't show toast for auto-checks
+    showToast('No entries to send!', 'warning');
+    return;
+  }
+
+  isSendingNow = true;
+  const managerEmail = "a.bazuhair@amco-saudi.com";
+  const ccEmail = document.getElementById('cc-email').value.trim();
+  const btn = isTest ? btnTestSend : btnFinalize;
+  const originalHtml = btn.innerHTML;
+
+  try {
+    btn.disabled = true;
+    btn.innerHTML = 'Sending...';
+
+    let tableHtml = `<table border="1" cellpadding="5" style="border-collapse: collapse; font-family: sans-serif; width: 100%;">
+      <tr style="background: #6366f1; color: white;">
+        <th>Date</th><th>Type</th><th>PO #</th><th>Supplier</th><th>Amount (SAR)</th>
+      </tr>`;
+    
+    entries.forEach(e => {
+      tableHtml += `<tr>
+        <td>${e.date}</td><td>${e.type}</td><td>${e.po}</td><td>${e.supplier}</td><td>${e.amountSar.toLocaleString()}</td>
+      </tr>`;
+    });
+    tableHtml += `</table>`;
+
+    const templateParams = {
+      to_name: "Manager",
+      to_email: managerEmail,
+      cc_email: ccEmail || "", 
+      message: isTest ? "[TEST SEND] Please find the current sample list below:" : "Please find the final daily procurement approval list below:",
+      table_content: tableHtml,
+      summary_count: entries.length,
+      total_sar: entries.reduce((acc, curr) => acc + curr.amountSar, 0).toLocaleString()
+    };
+
+    if (EMAILJS_PUBLIC_KEY === 'YOUR_EMAILJS_PUBLIC_KEY') {
+      showToast('Email service not configured. Simulation successful!', 'success');
+    } else {
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+      showToast(isTest ? 'Test email sent!' : 'Email sent to Manager!', 'success');
+    }
+
+    // Mark as sent in DB ONLY IF it's not a test
+    if (!isTest) {
+      const ids = entries.map(e => e.id);
+      await supabaseClient
+        .from('entries')
+        .update({ is_sent: true })
+        .in('id', ids);
+      
+      showToast('Dashboard cleared after sending.', 'info');
+      await loadEntries(); // Refresh to clear dashboard
+    }
+
+  } catch (err) {
+    console.error('Email Error:', err);
+    showToast('Failed to send email.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    // Debounce to prevent multiple sends in the same minute
+    setTimeout(() => { isSendingNow = false; }, 65000);
   }
 }
 
 // Delete Entry (Supabase)
 async function deleteEntry(id) {
   if (!confirm('Are you sure you want to remove this entry?')) return;
-
   try {
-    showToast('Removing from database...', 'info');
     const { error } = await supabaseClient
       .from('entries')
       .delete()
       .eq('id', id);
-
     if (error) throw error;
-
     showToast('Removed from team database', 'info');
-    await loadEntries();
   } catch (err) {
     console.error('Supabase Delete Error:', err);
     showToast('Could not delete from Supabase', 'error');
   }
 }
 
-// UI Event Listeners (Themes, Dates, etc.)
+// UI Event Listeners
 themeToggle.addEventListener('click', () => {
   currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', currentTheme);
   localStorage.setItem('approval_theme', currentTheme);
   updateThemeIcons();
+});
+
+// Settings Modal Listeners
+btnSettings.addEventListener('click', () => settingsModal.classList.add('active'));
+btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
+btnSaveSettings.addEventListener('click', updateSettings);
+btnTestSend.addEventListener('click', () => sendEmailToManager(true));
+
+// Close modal on outside click
+settingsModal.addEventListener('click', (e) => {
+  if (e.target === settingsModal) settingsModal.classList.remove('active');
 });
 
 function updateThemeIcons() {
@@ -208,11 +366,7 @@ dateInput.addEventListener('change', () => {
 });
 
 approvalTypeSelect.addEventListener('change', (e) => {
-  if (e.target.value === 'Advance Approval') {
-    advanceFields.style.display = 'grid';
-  } else {
-    advanceFields.style.display = 'none';
-  }
+  advanceFields.style.display = (e.target.value === 'Advance Approval') ? 'grid' : 'none';
 });
 
 function calculate() {
@@ -243,18 +397,7 @@ function updateSupplierDatalist() {
 }
 
 entryForm.addEventListener('submit', (e) => { e.preventDefault(); createEntry('Logged'); });
-
-document.getElementById('btn-send-now').addEventListener('click', () => {
-  if (entryForm.checkValidity()) createEntry('Sent Now');
-  else entryForm.reportValidity();
-});
-
-document.getElementById('btn-schedule').addEventListener('click', () => {
-  const scheduleTime = document.getElementById('schedule-time').value;
-  if (!scheduleTime) { showToast('Please select a time!', 'error'); return; }
-  if (entryForm.checkValidity()) createEntry(`Scheduled for ${new Date(scheduleTime).toLocaleString()}`);
-  else entryForm.reportValidity();
-});
+btnFinalize.addEventListener('click', sendEmailToManager);
 
 // Rendering & Exporting
 function renderDashboard() {
@@ -272,7 +415,7 @@ function renderDashboard() {
       <td>${e.amountSar.toLocaleString()}</td>
       <td><span style="color: var(--success);">● ${e.status}</span></td>
       <td style="text-align: right;">
-        <button onclick="deleteEntry(${e.id})" class="btn btn-danger btn-icon">
+        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon">
           <i data-lucide="trash-2"></i>
         </button>
       </td>
@@ -291,7 +434,7 @@ function renderDashboard() {
       <td>${e.advanceAmountOriginal ? e.advanceAmountOriginal.toLocaleString() : '0'} ${e.currency}</td>
       <td><span style="color: var(--success);">● ${e.status}</span></td>
       <td style="text-align: right;">
-        <button onclick="deleteEntry(${e.id})" class="btn btn-danger btn-icon">
+        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon">
           <i data-lucide="trash-2"></i>
         </button>
       </td>
