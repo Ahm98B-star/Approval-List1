@@ -386,7 +386,11 @@ async function sendEmailToManager(isTest = false) {
       await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(e=>e.id));
       await loadEntries();
     }
-    showToast('Dispatch Successful!', 'success');
+    
+    // 🔥 NEW: Trigger Success Modal
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    const successModal = document.getElementById('success-modal');
+    if (successModal) successModal.classList.add('active');
   } catch (e) { showToast('Dispatch Failed: Check Internet', 'error'); }
   finally { if(btn) { btn.disabled = false; btn.innerHTML = original; } isSendingNow = false; }
 }
@@ -444,6 +448,11 @@ if (btnSettings) btnSettings.addEventListener('click', () => settingsModal.class
 if (btnCloseSettings) btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
 if (btnSaveSettings) btnSaveSettings.addEventListener('click', updateSettings);
 if (toggleHistory) toggleHistory.addEventListener('change', e => { showHistory = e.target.checked; loadEntries(); });
+const btnCloseSuccess = document.getElementById('btn-close-success');
+if (btnCloseSuccess) btnCloseSuccess.addEventListener('click', () => {
+  const sm = document.getElementById('success-modal');
+  if (sm) sm.classList.remove('active');
+});
 if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(false));
 if (btnTestSend) btnTestSend.addEventListener('click', () => sendEmailToManager(true));

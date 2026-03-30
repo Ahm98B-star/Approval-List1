@@ -157,9 +157,6 @@
           <button class="btn btn-outline" id="btn-export">
             <i data-lucide="download"></i> Export Excel
           </button>
-          <button class="btn btn-primary" id="btn-finalize">
-            <i data-lucide="send"></i> Send Email Now
-          </button>
         </div>
       </div>
 
@@ -216,19 +213,28 @@
           <label for="input-send-time">Daily Email Send Time (24h)</label>
           <input type="time" id="input-send-time">
         </div>
-        <div class="input-group">
-          <label for="input-manager-email">Manager Recipient Email</label>
-          <input type="email" id="input-manager-email">
-        </div>
-        <div class="input-group">
-          <label for="input-cc-emails">CC Emails (Comma separated)</label>
-          <input type="text" id="input-cc-emails">
-        </div>
-        <div style="margin-top: 2rem; display: flex; gap: 1rem;">
-          <button class="btn btn-primary" id="btn-save-settings" style="flex: 2;">Save Configuration</button>
-          <button class="btn btn-outline" id="btn-test-send" style="flex: 1;">Test Send</button>
+        <div style="margin-top: 1.5rem;">
+          <button class="btn btn-primary" id="btn-finalize" style="width: 100%; height: 44px; margin-bottom: 0.75rem; justify-content: center;">
+            <i data-lucide="send"></i> Dispatch Final Summary Now
+          </button>
+          <div style="display: flex; gap: 1rem;">
+            <button class="btn btn-outline" id="btn-save-settings" style="flex: 2;">Save Configuration</button>
+            <button class="btn btn-outline" id="btn-test-send" style="flex: 1;">Test Send</button>
+          </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Success Modal -->
+  <div class="modal" id="success-modal">
+    <div class="modal-content glass" style="max-width: 400px; text-align: center; padding: 2.5rem;">
+      <div style="width: 70px; height: 70px; background: var(--success); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem;">
+        <i data-lucide="check" style="width: 40px; height: 40px; color: white;"></i>
+      </div>
+      <h2 style="color: var(--success); margin-bottom: 0.5rem;">Dispatch Successful!</h2>
+      <p class="text-muted" style="margin-bottom: 2rem;">The final summary has been sent to the manager and CC recipients.</p>
+      <button class="btn btn-primary" id="btn-close-success" style="width: 100%; justify-content: center;">Done</button>
     </div>
   </div>
 
