@@ -15,8 +15,13 @@ let supabaseClient;
 try {
   if (typeof supabase !== 'undefined') {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log("✅ Supabase Engine Loaded.");
+  } else {
+    alert("CRITICAL ERROR: Supabase library failed to load! Please check your internet connection and refresh.");
   }
-} catch (e) { console.error("Supabase Initialization Error:", e); }
+} catch (e) { 
+  console.error("❌ Supabase Initialization Error:", e);
+}
 
 const EMAILJS_PUBLIC_KEY = 'iOabUF7I4IR2pyt6q';
 const EMAILJS_SERVICE_ID = 'service_pz1v6gq';
