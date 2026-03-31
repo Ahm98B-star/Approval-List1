@@ -225,6 +225,7 @@ function renderDashboard() {
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
       <td>${(e.amountSar || 0).toLocaleString()}</td>
+      <td>${e.notes || '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td>
         ${!e.is_sent ? `
