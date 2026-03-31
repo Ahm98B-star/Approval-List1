@@ -223,6 +223,10 @@
           <button class="btn-close" id="btn-close-settings">&times;</button>
         </div>
         <div class="modal-body">
+          <div class="input-group" style="margin-bottom: 1rem;">
+            <label>Team Database Key (Stored Locally)</label>
+            <input type="password" id="input-db-key" placeholder="Paste 'anon' 'public' key here">
+          </div>
           <div class="input-group">
             <label>Daily Auto-Send Time (24h)</label>
             <input type="time" id="input-send-time">
@@ -243,6 +247,29 @@
         <h2>Dispatch Successful!</h2>
         <p>Your approval summary has been sent to the Manager and CC list.</p>
         <button onclick="document.getElementById('success-modal').classList.remove('active')" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+
+    <!-- SETUP MODAL (First run) -->
+    <div id="setup-modal" class="modal-overlay">
+      <div class="modal glass" style="max-width: 450px; text-align: center;">
+        <div style="margin-bottom: 20px;">
+          <div style="width: 60px; height: 60px; background: #6366f1; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px;">
+            <i data-lucide="shield-check" style="width: 30px; height: 30px; color: white;"></i>
+          </div>
+          <h2>Team Setup Required</h2>
+          <p style="opacity: 0.8; margin-top: 10px;">Please enter your Team's <b>Database Connection Key</b> to activate this dashboard.</p>
+        </div>
+        
+        <div class="input-group" style="text-align: left;">
+          <label>Database Key (anon public)</label>
+          <input type="password" id="setup-db-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..." style="width: 100%;">
+        </div>
+        
+        <div style="margin-top: 25px;">
+          <button id="btn-activate-setup" class="btn btn-primary full-width">Activate Dashboard</button>
+          <p style="font-size: 0.7rem; opacity: 0.5; margin-top: 10px; color: var(--text-muted, #64748b);">This key is stored securely in your private browser memory.</p>
+        </div>
       </div>
     </div>
 

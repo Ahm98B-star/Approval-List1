@@ -1,6 +1,6 @@
 // CONFIGURATION
 const SUPABASE_URL = 'https://oigjdfdfovmxfjsvpplv.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pZ2pkZmRmb3ZteGZqc3ZwcGx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwNDU3MDUsImV4cCI6MjA1NzYyMTcwNX0.J_gXGvQYmO9Y8T6eR0t1-N-a7T7L4H6Y1z7q8v9p';
+let SUPABASE_ANON_KEY = localStorage.getItem('supabase_anon_key') || '';
 const EMAILJS_SERVICE_ID = 'service_pz1v6gq';
 const EMAILJS_TEMPLATE_ID = 'template_t156fbg';
 const EMAILJS_PUBLIC_KEY = 'iOabUF7I4IR2pyt6q';
@@ -30,10 +30,13 @@ const customPercentGroup = document.getElementById('custom-percent-group');
 const advanceAmountInput = document.getElementById('advance-amount');
 const inputManagerEmail = document.getElementById('input-manager-email');
 const inputSendTime = document.getElementById('input-send-time');
+const inputDbKey = document.getElementById('input-db-key');
 const btnSettings = document.getElementById('btn-settings');
 const settingsModal = document.getElementById('settings-modal');
+const setupModal = document.getElementById('setup-modal');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 const btnSaveSettings = document.getElementById('btn-save-settings');
+const btnActivateSetup = document.getElementById('btn-activate-setup');
 const btnFinalize = document.getElementById('btn-finalize');
 const btnCancelEdit = document.getElementById('btn-cancel-edit');
 
@@ -52,22 +55,37 @@ function showToast(msg, type = 'info') {
 
 // INITIALIZATION
 async function init() {
+  lucide.createIcons();
+  poDateSpan.textContent = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  initTheme();
+
+  if (!SUPABASE_ANON_KEY) {
+    setupModal.classList.add('active');
+    return;
+  }
+
   try {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
-    
-    lucide.createIcons();
-    poDateSpan.textContent = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
     await loadSettings();
     await loadEntries();
     subscribeToChanges();
-    initTheme();
     calculate();
     setInterval(checkSchedule, 60000); // Check every minute
   } catch (err) {
-    showToast('Initialization Error: Check Database Key', 'error');
+    showToast('Database connection failed. Please check your key in Settings.', 'error');
   }
+}
+
+async function activateDashboard() {
+  const key = document.getElementById('setup-db-key').value.trim();
+  if (!key) return showToast('Please enter the team database key', 'error');
+
+  localStorage.setItem('supabase_anon_key', key);
+  SUPABASE_ANON_KEY = key;
+  setupModal.classList.remove('active');
+  window.location.reload(); // Restart with the new key
 }
 
 // DATABASE LOGIC
@@ -77,26 +95,35 @@ async function loadSettings() {
     const sTime = data.find(i => i.key === 'send_time');
     const sEmail = data.find(i => i.key === 'manager_email');
     const sCC = data.find(i => i.key === 'cc_emails');
-    
+
+    inputDbKey.value = SUPABASE_ANON_KEY;
     if (sTime) { dailySendTime = sTime.value; inputSendTime.value = dailySendTime; }
     if (sEmail) { managerEmail = sEmail.value; inputManagerEmail.value = managerEmail; }
-    if (sCC) { 
-      ccEmailsArray = sCC.value ? sCC.value.split(',').map(e => e.trim()).filter(e=>e) : [];
+    if (sCC) {
+      ccEmailsArray = sCC.value ? sCC.value.split(',').map(e => e.trim()).filter(e => e) : [];
       renderCcTags();
     }
   }
 }
 
 async function updateSettings() {
+  const newKey = inputDbKey.value.trim();
   const newTime = inputSendTime.value;
   const newEmail = inputManagerEmail.value.trim();
   const newCC = ccEmailsArray.join(',');
+
+  if (newKey !== SUPABASE_ANON_KEY) {
+    localStorage.setItem('supabase_anon_key', newKey);
+    showToast('API Key updated. Refreshing...', 'success');
+    setTimeout(() => window.location.reload(), 1000);
+    return;
+  }
 
   try {
     await supabaseClient.from('settings').upsert([{ key: 'send_time', value: newTime }], { onConflict: 'key' });
     await supabaseClient.from('settings').upsert([{ key: 'manager_email', value: newEmail }], { onConflict: 'key' });
     await supabaseClient.from('settings').upsert([{ key: 'cc_emails', value: newCC }], { onConflict: 'key' });
-    
+
     dailySendTime = newTime;
     managerEmail = newEmail;
     showToast('Settings Saved!', 'success');
@@ -125,46 +152,48 @@ async function loadEntries() {
     advancePercent: i.advance_percent,
     advanceAmount: i.advance_amount,
     notes: i.notes,
-    is_sent: i.is_sent,
-    status: i.status || 'Pending'
+    is_sent: i.is_sent
   }));
   renderDashboard();
 }
 
 async function createEntry(e) {
-  if (e) e.preventDefault();
-  
+  e.preventDefault();
   const entryData = {
-    approval_type: getVal('approval-type') || 'PO Approval',
-    pr_so_number: getVal('pr-so-number'),
-    po_number: getVal('po-number'),
-    wo_so_number: getVal('wo-so-number'),
-    description: getVal('description'),
-    category: getVal('category'),
-    supplier: getVal('supplier'),
-    amount: getNum('amount'),
-    currency: getVal('currency'),
-    amount_sar: getNum('amount-sar'),
-    advance_percent: (getVal('advance-percent') === 'custom' ? getNum('custom-percent') : getNum('advance-percent')),
-    advance_amount: getNum('advance-amount'),
-    notes: getVal('notes'),
-    po_date: poDateSpan.textContent,
-    is_sent: false,
-    status: 'Pending'
+    po_date: new Date().toISOString().split('T')[0],
+    description: document.getElementById('description').value,
+    category: document.getElementById('category').value,
+    pr_so_number: document.getElementById('pr-so-number').value,
+    wo_so_number: document.getElementById('wo-so-number').value,
+    po_number: document.getElementById('po-number').value,
+    supplier: document.getElementById('supplier').value,
+    amount: parseFloat(amountInput.value),
+    currency: currencySelect.value,
+    amount_sar: parseFloat(amountSarInput.value),
+    advance_percent: parseFloat(advancePercentSelect.value === 'custom' ? customPercentInput.value : advancePercentSelect.value) || 0,
+    advance_amount: parseFloat(advanceAmountInput.value) || 0,
+    notes: document.getElementById('notes').value,
+    is_sent: false
   };
 
   try {
-    const { error } = editMode 
-      ? await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId)
-      : await supabaseClient.from('entries').insert([entryData]);
-
-    if (error) throw error;
-    showToast(editMode ? 'Success!' : 'Logged!', 'success');
+    if (currentEditingId) {
+      const { error } = await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId);
+      if (error) throw error;
+      currentEditingId = null;
+      btnCancelEdit.style.display = 'none';
+      showToast('Entry Updated Successfully', 'success');
+    } else {
+      const { error } = await supabaseClient.from('entries').insert([entryData]);
+      if (error) throw error;
+      showToast('Entry Recorded Successfully', 'success');
+    }
     approvalForm.reset();
-    cancelEdit();
     calculate();
-    await loadEntries();
-  } catch (err) { showToast('Error: ' + err.message, 'error'); }
+  } catch (err) {
+    console.error('Save error:', err);
+    showToast('Save Failed: ' + err.message, 'error');
+  }
 }
 
 async function deleteEntry(id) {
@@ -182,7 +211,7 @@ function startEdit(id) {
   currentEditingId = id;
   document.getElementById('form-title').textContent = 'Editing Approval Record';
   btnCancelEdit.style.display = 'inline-flex';
-  
+
   document.getElementById('approval-type').value = (e.advanceAmount > 0) ? 'Advance Approval' : 'PO Approval';
   document.getElementById('pr-so-number').value = e.prSo || '';
   document.getElementById('po-number').value = e.po || '';
@@ -193,13 +222,13 @@ function startEdit(id) {
   document.getElementById('amount').value = e.amount;
   document.getElementById('currency').value = e.currency;
   document.getElementById('notes').value = e.notes || '';
-  
+
   if (e.advanceAmount > 0) {
     advancePercentSelect.value = 'custom';
     customPercentGroup.style.display = 'block';
     customPercentInput.value = e.advancePercent;
   }
-  
+
   window.scrollTo({ top: 0, behavior: 'smooth' });
   calculate();
 }
@@ -259,7 +288,7 @@ function renderDashboard() {
       </td>
     </tr>
   `).join('');
-  
+
   lucide.createIcons();
 }
 
@@ -272,7 +301,7 @@ function renderCcTags() {
   lucide.createIcons();
 }
 
-window.addCcFromInput = function() {
+window.addCcFromInput = function () {
   const input = document.getElementById('new-cc-input');
   const email = input.value.trim();
   if (email && email.includes('@') && !ccEmailsArray.includes(email)) {
@@ -283,7 +312,7 @@ window.addCcFromInput = function() {
   }
 };
 
-window.removeCcTag = function(i) {
+window.removeCcTag = function (i) {
   ccEmailsArray.splice(i, 1);
   renderCcTags();
   updateSettings();
@@ -306,36 +335,35 @@ function calculate() {
   }
 }
 
-async function sendEmailToManager(isTest = false) {
-  const pending = entries.filter(e => !e.is_sent);
-  if (pending.length === 0) return showToast('Nothing to send!', 'warning');
-  
-  if (!managerEmail) return showToast('Set Manager Email first', 'error');
-
-  const btn = isTest ? null : btnFinalize;
-  const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Sending...'; lucide.createIcons(); }
+async function sendEmailToManager(isScheduled = false) {
+  const pending = entries.filter(i => !i.is_sent);
+  if (pending.length === 0) {
+    if (!isScheduled) showToast('No pending items to send', 'info');
+    return;
+  }
 
   try {
-    const pos = pending.filter(i => (i.advanceAmount === 0 || !i.advanceAmount));
+    if (!managerEmail) throw new Error('Manager email not set');
+
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const emailSubject = `GM Procurement Approval Request - ${todayStr}`;
+
+    const pos = pending.filter(i => i.advanceAmount === 0);
     const advs = pending.filter(i => i.advanceAmount > 0);
 
     let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
       <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (⃁)</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category || '-'}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
-    if(pos.length) poH += "</table>";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description}</td><td>${e.category}</td><td>${e.prSo}</td><td>${e.woSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
+    if (pos.length) poH += "</table>";
 
     let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
       <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (⃁)</th><th>Adv %</th><th>Adv (⃁)</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category || '-'}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
-    if(advs.length) advH += "</table>";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description}</td><td>${e.category}</td><td>${e.prSo}</td><td>${e.woSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
+    if (advs.length) advH += "</table>";
 
-    const totalPoSum = pos.reduce((a, b) => a + (b.amountSar || 0), 0);
-    const totalAdvSum = advs.reduce((a, b) => a + (b.advanceAmount || 0), 0);
+    const totalPoSum = pos.reduce((sum, i) => sum + (i.amountSar || 0), 0);
+    const totalAdvSum = advs.reduce((sum, i) => sum + (i.advanceAmount || 0), 0);
     const grandTotal = totalPoSum + totalAdvSum;
-    
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const emailSubject = "GM Procurement Approval Request - " + todayStr;
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       subject_line: emailSubject,
@@ -349,24 +377,20 @@ async function sendEmailToManager(isTest = false) {
       total_sar: grandTotal.toLocaleString()
     });
 
-    if (!isTest) {
-      await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(e => e.id));
-      await loadEntries();
-      document.getElementById('success-modal').classList.add('active');
-    }
-    showToast('Sent!', 'success');
-  } catch (err) { 
-    console.error(err);
-    showToast('Failed: Check API Settings', 'error'); 
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = original; lucide.createIcons(); }
+    const { error } = await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(i => i.id));
+    if (error) throw error;
+
+    showToast('Dispatch Successful: Email Sent & Records Updated', 'success');
+  } catch (err) {
+    console.error('Email error:', err);
+    showToast('Dispatch Failed: ' + err.message, 'error');
   }
 }
 
 async function checkSchedule() {
   const now = new Date();
-  const timeStr = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
-  if (timeStr === dailySendTime && !isSendingNow && entries.some(e=>!e.is_sent)) await sendEmailToManager();
+  const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  if (timeStr === dailySendTime && !isSendingNow && entries.some(e => !e.is_sent)) await sendEmailToManager(true);
 }
 
 function subscribeToChanges() {
@@ -377,7 +401,7 @@ function subscribeToChanges() {
 
 // THEME LOGIC
 function initTheme() {
-  const saved = localStorage.getItem('theme_preference') || 'light';
+  const saved = localStorage.getItem('theme_preference') || 'dark';
   document.documentElement.setAttribute('data-theme', saved);
   const icon = document.getElementById('theme-icon');
   if (icon) {
@@ -387,7 +411,7 @@ function initTheme() {
 }
 
 function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
   const target = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', target);
   localStorage.setItem('theme_preference', target);
@@ -415,6 +439,7 @@ btnFinalize.addEventListener('click', () => sendEmailToManager(false));
 btnCancelEdit.addEventListener('click', cancelEdit);
 inputManagerEmail.addEventListener('change', updateSettings);
 document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
+btnActivateSetup.addEventListener('click', activateDashboard);
 
 // START
 init();
