@@ -291,6 +291,12 @@ function renderDashboard() {
   const pos = entries.filter(i => (i.advanceAmount === 0 || !i.advanceAmount));
   const advs = entries.filter(i => i.advanceAmount > 0);
 
+  const poCountEl = document.getElementById('po-count');
+  if (poCountEl) poCountEl.textContent = pos.length;
+  
+  const advCountEl = document.getElementById('adv-count');
+  if (advCountEl) advCountEl.textContent = advs.length;
+
   if (poTbody) poTbody.innerHTML = pos.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
@@ -447,13 +453,13 @@ async function sendEmailToManager(isScheduled = false) {
     const advs = pending.filter(i => i.advanceAmount > 0);
 
     let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description}</td><td>${e.category}</td><td>${e.prSo}</td><td>${e.woSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
     if (pos.length) poH += "</table>";
 
     let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (SAR)</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description}</td><td>${e.category}</td><td>${e.prSo}</td><td>${e.woSo}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
     if (advs.length) advH += "</table>";
 
     const totalPoSum = pos.reduce((sum, i) => sum + (i.amountSar || 0), 0);
