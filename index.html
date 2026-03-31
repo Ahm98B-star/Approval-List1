@@ -166,8 +166,15 @@
 
       <!-- Tables Section -->
       <section class="tables-area">
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.5rem;">
+          <h2 style="font-size: 1.25rem; font-weight: 600;">Active Pipeline</h2>
+          <button id="btn-delete-selected" class="btn btn-danger" style="display: none;" onclick="deleteSelected()">
+            <i data-lucide="trash-2"></i> Delete Selected (<span id="selected-count">0</span>)
+          </button>
+        </div>
+
         <!-- PO Approvals -->
-        <div class="table-card glass">
+        <div class="table-card glass" style="margin-top: 0;">
           <div class="card-header">
             <i data-lucide="file-text"></i>
             <h3>PO Approvals Tracking</h3>
@@ -176,6 +183,7 @@
             <table class="data-table">
               <thead>
                 <tr>
+                  <th style="width: 30px;"><input type="checkbox" id="selectAllPo" onchange="toggleSelectAll('po')"></th>
                   <th>Date</th>
                   <th>Description</th>
                   <th>Category</th>
@@ -204,6 +212,7 @@
             <table class="data-table">
               <thead>
                 <tr>
+                  <th style="width: 30px;"><input type="checkbox" id="selectAllAdv" onchange="toggleSelectAll('advance')"></th>
                   <th>Date</th>
                   <th>Description</th>
                   <th>Category</th>

@@ -71,6 +71,7 @@ async function init() {
     }
 
     await loadSettings();
+    await autoPurgeOldRecords();
     await loadEntries();
     subscribeToChanges();
     calculate();
@@ -292,6 +293,7 @@ function renderDashboard() {
 
   if (poTbody) poTbody.innerHTML = pos.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
+      <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
       <td>${e.date}</td>
       <td title="${e.description || ''}">${e.description || '-'}</td>
       <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
@@ -303,16 +305,15 @@ function renderDashboard() {
       <td>${e.notes || '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td>
-        ${!e.is_sent ? `
-          <button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
-          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
-        ` : ''}
+        ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>` : ''}
+        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
       </td>
     </tr>
   `).join('');
 
   if (advanceTbody) advanceTbody.innerHTML = advs.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
+      <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
       <td>${e.date}</td>
       <td title="${e.description || ''}">${e.description || '-'}</td>
       <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
@@ -324,15 +325,60 @@ function renderDashboard() {
       <td>${e.notes ? 'Yes' : '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td>
-        ${!e.is_sent ? `
-          <button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
-          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
-        ` : ''}
+        ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>` : ''}
+        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
       </td>
     </tr>
   `).join('');
 
   lucide.createIcons();
+}
+
+window.toggleSelectAll = function(type) {
+  const isChecked = document.getElementById(type === 'po' ? 'selectAllPo' : 'selectAllAdv').checked;
+  const checkboxes = document.querySelectorAll(type === 'po' ? '#po-tbody .row-checkbox' : '#advance-tbody .row-checkbox');
+  checkboxes.forEach(cb => cb.checked = isChecked);
+  updateDeleteSelectButton();
+};
+
+window.updateDeleteSelectButton = function() {
+  const checked = document.querySelectorAll('.row-checkbox:checked');
+  const btn = document.getElementById('btn-delete-selected');
+  const countSpan = document.getElementById('selected-count');
+  if (btn && countSpan) {
+    if (checked.length > 0) {
+      countSpan.textContent = checked.length;
+      btn.style.display = 'inline-flex';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+};
+
+window.deleteSelected = async function() {
+  const checked = document.querySelectorAll('.row-checkbox:checked');
+  if (checked.length === 0) return;
+  if (!confirm(`Permanently delete ${checked.length} selected records?`)) return;
+  const ids = Array.from(checked).map(cb => cb.value);
+  try {
+    const { error } = await supabaseClient.from('entries').delete().in('id', ids);
+    if (error) throw error;
+    showToast(`Deleted ${ids.length} records!`, 'success');
+    document.getElementById('btn-delete-selected').style.display = 'none';
+    if(document.getElementById('selectAllPo')) document.getElementById('selectAllPo').checked = false;
+    if(document.getElementById('selectAllAdv')) document.getElementById('selectAllAdv').checked = false;
+    await loadEntries();
+  } catch (err) {
+    showToast('Delete Failed: ' + err.message, 'error');
+  }
+};
+
+async function autoPurgeOldRecords() {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  try {
+    await supabaseClient.from('entries').delete().lt('po_date', thirtyDaysAgo.toISOString().split('T')[0]);
+  } catch (e) { console.log('Auto Purge passed'); }
 }
 
 // CC TAGS
