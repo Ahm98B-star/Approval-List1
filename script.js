@@ -349,15 +349,38 @@ window.toggleSelectAll = function(type) {
 
 window.updateDeleteSelectButton = function() {
   const checked = document.querySelectorAll('.row-checkbox:checked');
-  const btn = document.getElementById('btn-delete-selected');
-  const countSpan = document.getElementById('selected-count');
-  if (btn && countSpan) {
-    if (checked.length > 0) {
-      countSpan.textContent = checked.length;
-      btn.style.display = 'inline-flex';
-    } else {
-      btn.style.display = 'none';
-    }
+  const btnDel = document.getElementById('btn-delete-selected');
+  const countSpanDel = document.getElementById('selected-count');
+  const btnReq = document.getElementById('btn-requeue-selected');
+  const countSpanReq = document.getElementById('requeue-count');
+
+  if (checked.length > 0) {
+    if (countSpanDel) countSpanDel.textContent = checked.length;
+    if (btnDel) btnDel.style.display = 'inline-flex';
+    if (countSpanReq) countSpanReq.textContent = checked.length;
+    if (btnReq) btnReq.style.display = 'inline-flex';
+  } else {
+    if (btnDel) btnDel.style.display = 'none';
+    if (btnReq) btnReq.style.display = 'none';
+  }
+};
+
+window.requeueSelected = async function() {
+  const checked = document.querySelectorAll('.row-checkbox:checked');
+  if (checked.length === 0) return;
+  const ids = Array.from(checked).map(cb => cb.value);
+  try {
+    const { error } = await supabaseClient.from('entries').update({ is_sent: false }).in('id', ids);
+    if (error) throw error;
+    showToast(`Re-Queued ${ids.length} records instantly!`, 'success');
+    document.getElementById('btn-delete-selected').style.display = 'none';
+    const btnReq = document.getElementById('btn-requeue-selected');
+    if (btnReq) btnReq.style.display = 'none';
+    if(document.getElementById('selectAllPo')) document.getElementById('selectAllPo').checked = false;
+    if(document.getElementById('selectAllAdv')) document.getElementById('selectAllAdv').checked = false;
+    await loadEntries();
+  } catch (err) {
+    showToast('Requeue Failed: ' + err.message, 'error');
   }
 };
 
@@ -371,6 +394,8 @@ window.deleteSelected = async function() {
     if (error) throw error;
     showToast(`Deleted ${ids.length} records!`, 'success');
     document.getElementById('btn-delete-selected').style.display = 'none';
+    const btnReq = document.getElementById('btn-requeue-selected');
+    if (btnReq) btnReq.style.display = 'none';
     if(document.getElementById('selectAllPo')) document.getElementById('selectAllPo').checked = false;
     if(document.getElementById('selectAllAdv')) document.getElementById('selectAllAdv').checked = false;
     await loadEntries();
