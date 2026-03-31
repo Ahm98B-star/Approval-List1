@@ -118,7 +118,12 @@ async function loadSettings() {
     if (inputEmailTpl) inputEmailTpl.value = EMAILJS_TEMPLATE_ID;
     if (inputEmailPub) inputEmailPub.value = EMAILJS_PUBLIC_KEY;
 
-    if (sTime) { dailySendTime = sTime.value; inputSendTime.value = dailySendTime; }
+    if (sTime) { 
+      dailySendTime = sTime.value; 
+      inputSendTime.value = dailySendTime; 
+      const scheduleText = document.getElementById('daily-schedule-text');
+      if (scheduleText) scheduleText.textContent = 'Auto-Dispatch: ' + dailySendTime;
+    }
     if (sEmail) { managerEmail = sEmail.value; inputManagerEmail.value = managerEmail; }
     if (sCC) {
       ccEmailsArray = sCC.value ? sCC.value.split(',').map(e => e.trim()).filter(e => e) : [];
@@ -142,6 +147,9 @@ async function updateSettings() {
   const newTime = inputSendTime.value;
   const newEmail = inputManagerEmail.value.trim();
   const newCC = ccEmailsArray.join(',');
+
+  const scheduleText = document.getElementById('daily-schedule-text');
+  if (scheduleText) scheduleText.textContent = 'Auto-Dispatch: ' + newTime;
 
   if (newKey !== SUPABASE_ANON_KEY || newUrl !== SUPABASE_URL || newEmailSvc !== EMAILJS_SERVICE_ID || newEmailTpl !== EMAILJS_TEMPLATE_ID || newEmailPub !== EMAILJS_PUBLIC_KEY) {
     localStorage.setItem('supabase_anon_key', newKey);
@@ -356,7 +364,10 @@ window.removeCcTag = function (i) {
 // LOGIC
 function calculate() {
   const amt = getNum('amount');
-  const rates = { 'SAR': 1, 'USD': 3.75, 'EUR': 4.10, 'GBP': 4.80 };
+  const rates = { 
+    'SAR': 1, 'USD': 3.75, 'EUR': 4.10, 'GBP': 4.80, 
+    'AED': 1.02, 'BHD': 9.95, 'KWD': 12.20, 'OMR': 9.75, 'QAR': 1.03, 'CNY': 0.52 
+  };
   const sar = amt * (rates[currencySelect.value] || 1);
   amountSarInput.value = sar.toFixed(2);
 
@@ -421,7 +432,9 @@ async function sendEmailToManager(isScheduled = false) {
     showToast('Dispatch Successful: Email Sent & Records Updated', 'success');
   } catch (err) {
     console.error('Email error:', err);
-    showToast('Dispatch Failed: ' + err.message, 'error');
+    // EmailJS often returns errors as custom objects with a .text property
+    const errMsg = err.text || err.message || (typeof err === 'string' ? err : 'Unknown Error');
+    showToast('Dispatch Failed: ' + errMsg, 'error');
   }
 }
 
