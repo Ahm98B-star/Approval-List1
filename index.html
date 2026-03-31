@@ -1,259 +1,254 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Approval System | Procurement Dashboard</title>
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elite Approval System | GM Procurement</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
-    <header class="glass card header">
-      <div class="header-content">
-        <div>
-          <h1>Approval System</h1>
-          <p class="text-muted">Procurement Management Dashboard</p>
-        </div>
-        <div class="header-actions">
-          <div class="toggle-group">
-            <span class="text-muted" style="font-size: 0.85rem;">Show History</span>
-            <label class="switch">
-              <input type="checkbox" id="toggle-history">
-              <span class="slider"></span>
-            </label>
-          </div>
-          <button class="btn btn-icon btn-outline" id="btn-settings" title="Settings">
-            <i data-lucide="settings"></i>
-          </button>
-          <button class="btn btn-icon btn-secondary" id="theme-toggle" title="Toggle Theme">
-            <i data-lucide="sun"></i>
-          </button>
-        </div>
+  <div class="app-container">
+    <header class="app-header glass">
+      <div class="logo-area">
+        <i data-lucide="shield-check" class="logo-icon"></i>
+        <h1>GM Procurement <span>Approval System</span></h1>
+      </div>
+      <div class="header-actions">
+        <button id="btn-theme-toggle" class="btn btn-outline btn-icon" title="Toggle Day/Dark Mode" style="margin-right: 8px;">
+          <i data-lucide="moon" id="theme-icon"></i>
+        </button>
+        <button id="btn-settings" class="btn btn-outline btn-icon" title="Settings">
+          <i data-lucide="settings"></i>
+        </button>
       </div>
     </header>
 
-    <!-- App Banner -->
-    <div class="glass card banner" id="po-date-banner">
-      <p><strong>PO : <span id="po-date">Loading...</span></strong></p>
-    </div>
-
-    <!-- New Entry Form -->
-    <section class="glass card" style="margin-bottom: 2rem;">
-      <h2 style="margin-bottom: 1.5rem; color: var(--primary);">New Entry</h2>
-      
-      <form id="entry-form">
-        <div class="form-grid">
-          <div class="input-group">
-            <label for="approval-type">Approval Type</label>
-            <select id="approval-type">
-              <option value="PO Approval">PO Approval</option>
-              <option value="Advance Approval">Advance Approval</option>
-            </select>
-          </div>
-          <div class="input-group">
-            <label for="pr-so-number">PR/SO Number</label>
-            <input type="text" id="pr-so-number" placeholder="Enter PR/SO #">
-          </div>
-          <div class="input-group">
-            <label for="po-number">PO Number</label>
-            <input type="text" id="po-number" placeholder="Enter PO #" required>
-          </div>
-          <div class="input-group">
-            <label for="description">Description (Summary)</label>
-            <input type="text" id="description" placeholder="e.g. Monthly Spare Parts Order">
-          </div>
-          <div class="input-group">
-            <label for="supplier">Supplier</label>
-            <input type="text" id="supplier" list="supplier-list" placeholder="Type or select supplier" required>
-            <datalist id="supplier-list"></datalist>
-          </div>
-          <div class="input-group">
-            <label for="amount">Amount</label>
-            <div style="display: flex; gap: 0.5rem;">
-              <input type="number" step="0.01" id="amount" placeholder="0.00" required style="flex: 1;">
-              <select id="currency" style="width: 100px;">
-                <option value="SAR">SAR</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="AED">AED</option>
-                <option value="QAR">QAR</option>
-                <option value="KWD">KWD</option>
-                <option value="BHD">BHD</option>
-                <option value="OMR">OMR</option>
-              </select>
-            </div>
-          </div>
-          <div class="input-group">
-            <label for="amount-sar">Amount in SAR</label>
-            <input type="number" step="0.01" id="amount-sar" readonly style="background: rgba(255,255,255,0.05); cursor: not-allowed;">
+    <main class="dashboard">
+      <!-- Dispatch Configuration Bar -->
+      <section class="dispatch-bar glass">
+        <div class="dispatch-item">
+          <label>Manager Recipient</label>
+          <input type="email" id="input-manager-email" placeholder="manager@example.com" class="glass">
+        </div>
+        <div class="dispatch-item">
+          <label>CC Recipients</label>
+          <div id="cc-tags-container" class="tag-input-wrapper glass">
+            <div id="cc-tags-list" class="tags-list"></div>
+            <input type="text" id="new-cc-input" placeholder="Add email...">
+            <button onclick="addCcFromInput()" class="btn-add-tag"><i data-lucide="plus"></i></button>
           </div>
         </div>
+        <div class="dispatch-item" style="flex: 0 0 auto;">
+          <button id="btn-export" class="btn btn-outline" style="height: 42px;">
+            <i data-lucide="file-spreadsheet"></i> Export Excel
+          </button>
+        </div>
+      </section>
 
-        <!-- Advance Payment Fields -->
-        <div id="advance-fields" class="form-grid" style="display: none; margin-top: 1.5rem;">
-          <div class="input-group">
-            <label for="advance-percent">Advance Payment %</label>
-            <select id="advance-percent">
-              <option value="0">Select %</option>
-              <option value="10">10%</option>
-              <option value="20">20%</option>
-              <option value="30">30%</option>
-              <option value="50">50%</option>
-              <option value="100">100%</option>
-              <option value="custom">Custom %</option>
-            </select>
-          </div>
-          <div class="input-group" id="custom-percent-group" style="display: none;">
-            <label for="custom-percent">Custom %</label>
-            <input type="number" id="custom-percent" placeholder="Enter %">
-          </div>
-          <div class="input-group">
-            <label for="advance-amount">Advance Amount (SAR)</label>
-            <input type="number" step="0.01" id="advance-amount" readonly style="background: rgba(255,255,255,0.05); cursor: not-allowed;">
-          </div>
+      <!-- Input Section -->
+      <section class="entry-form-card glass">
+        <div class="card-header">
+          <i data-lucide="edit-3"></i>
+          <h3 id="form-title">Create New Approval Record</h3>
+          <span id="po-date-badge" class="badge">Date: <span id="po-date">...</span></span>
         </div>
         
-        <!-- Notes Field -->
-        <div class="input-group" style="margin-top: 1.5rem;">
-          <label for="notes">Additional Notes (Optional)</label>
-          <textarea id="notes" placeholder="Enter any extra details here..." class="glass" style="width: 100%; min-height: 80px; padding: 0.8rem; border-radius: 8px;"></textarea>
-        </div>
+        <form id="approval-form" class="entry-form">
+          <div class="form-grid">
+            <div class="input-group">
+              <label for="approval-type">Approval Type</label>
+              <select id="approval-type" required>
+                <option value="PO Approval">PO Approval</option>
+                <option value="Advance Approval">Advance Approval</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="pr-so-number">PR/SO Number</label>
+              <input type="text" id="pr-so-number" placeholder="Enter PR/SO #">
+            </div>
+            <div class="input-group">
+              <label for="po-number">PO Number</label>
+              <input type="text" id="po-number" placeholder="Enter PO #" required>
+            </div>
+            <div class="input-group">
+              <label for="wo-so-number">WO/SO Number</label>
+              <input type="text" id="wo-so-number" placeholder="Work Order / Sales Order #">
+            </div>
+            <div class="input-group">
+              <label for="description">Description (Summary)</label>
+              <input type="text" id="description" placeholder="Short summary of request">
+            </div>
+            <div class="input-group">
+              <label for="category">Category</label>
+              <select id="category" required>
+                <option value="">Select Category</option>
+                <option value="Stock">Stock</option>
+                <option value="Service">Service</option>
+                <option value="Material purchase">Material purchase</option>
+                <option value="Capex">Capex</option>
+                <option value="Indirect purchase">Indirect purchase</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="supplier">Supplier</label>
+              <input type="text" id="supplier" list="supplier-list" placeholder="Enter supplier name" required>
+              <datalist id="supplier-list"></datalist>
+            </div>
+            <div class="input-group">
+              <label for="amount">Amount (Currency)</label>
+              <div class="currency-group">
+                <input type="number" step="0.01" id="amount" placeholder="0.00" required>
+                <select id="currency">
+                  <option value="SAR">⃁</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+              </div>
+            </div>
+            <div class="input-group">
+              <label>Amount (⃁ Equivalent)</label>
+              <input type="number" id="amount-sar" readonly class="readonly-input">
+            </div>
+          </div>
 
-        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-          <button type="submit" class="btn btn-primary" id="btn-log-entry" style="flex: 2; height: 50px; font-size: 1.1rem; justify-content: center;">
-            <i data-lucide="plus-circle"></i> Log Entry into Team Database
-          </button>
-          <button type="button" class="btn btn-outline" id="btn-cancel-edit" style="flex: 1; height: 50px; display: none; justify-content: center;">
-            Cancel Edit
-          </button>
-        </div>
-      </form>
-    </section>
+          <!-- Advance Payment Section -->
+          <div id="advance-fields" class="advance-section glass" style="display:none;">
+            <div class="input-group">
+              <label for="advance-percent">Advance Percentage %</label>
+              <select id="advance-percent">
+                <option value="0">Select %</option>
+                <option value="10">10%</option>
+                <option value="20">20%</option>
+                <option value="30">30%</option>
+                <option value="50">50%</option>
+                <option value="100">100%</option>
+                <option value="custom">Custom %</option>
+              </select>
+            </div>
+            <div class="input-group" id="custom-percent-group" style="display:none;">
+              <label for="custom-percent">Enter Custom %</label>
+              <input type="number" id="custom-percent" placeholder="e.g. 15">
+            </div>
+            <div class="input-group">
+              <label for="advance-amount">Advance Amount (⃁)</label>
+              <input type="number" id="advance-amount" readonly class="readonly-input">
+            </div>
+          </div>
 
-    <!-- Dashboard Configuration & Tables -->
-    <section class="glass card">
-      <!-- Dynamic Status Banner -->
-      <div id="status-banner" class="status-banner fade-in">
-        <i data-lucide="info" style="color: var(--primary);"></i>
-        <p><strong>📧 Daily Summary:</strong> Sent to the <strong>Manager</strong> today by <strong id="display-send-time">Loading...</strong>.</p>
-      </div>
+          <div class="input-group full-width">
+            <label for="notes">Final Comments / Notes</label>
+            <textarea id="notes" placeholder="Any additional context for the GM..."></textarea>
+          </div>
 
-      <!-- NEW: Email Dispatch Bar -->
-      <div class="glass dispatch-bar" style="border-radius: 12px; margin-bottom: 2rem;">
-        <div style="flex: 1; min-width: 280px;">
-          <label style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block;">Manager Recipient Email</label>
-          <input type="email" id="input-manager-email" placeholder="manager@example.com" class="glass" style="width: 100%;">
-        </div>
-        <div style="flex: 2; min-width: 350px;">
-          <label style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block;">CC Recipients (Type and press Enter)</label>
-          <div id="cc-tags-container" class="cc-tags-container glass">
-            <input type="text" id="new-cc-input" placeholder="Add email...">
-            <button type="button" id="btn-add-cc" class="btn btn-primary btn-icon" style="height: 28px; width: 28px; padding: 0;">
-              <i data-lucide="plus" style="width: 16px;"></i>
+          <div class="form-actions">
+            <button type="submit" id="btn-log-entry" class="btn btn-primary">
+              <i data-lucide="database"></i> Log Entry into Team Database
+            </button>
+            <button type="button" id="btn-cancel-edit" class="btn btn-outline" style="display:none;">
+              Cancel Edit
             </button>
           </div>
+        </form>
+      </section>
+
+      <!-- Tables Section -->
+      <section class="tables-area">
+        <!-- PO Approvals -->
+        <div class="table-card glass">
+          <div class="card-header">
+            <i data-lucide="file-text"></i>
+            <h3>PO Approvals Tracking</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Description</th>
+                  <th>Category</th>
+                  <th>PR/SO #</th>
+                  <th>WO/SO #</th>
+                  <th>PO #</th>
+                  <th>Supplier</th>
+                  <th>⃁ Amount</th>
+                  <th>Status</th>
+                  <th style="width: 80px;"></th>
+                </tr>
+              </thead>
+              <tbody id="po-tbody"></tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
-        <h2>Team Dashboard</h2>
-        <div style="display: flex; gap: 1rem; align-items: center;">
-          <button class="btn btn-outline" id="btn-export">
-            <i data-lucide="download"></i> Export Excel
-          </button>
+        <!-- Advance Approvals -->
+        <div class="table-card glass">
+          <div class="card-header">
+            <i data-lucide="landmark"></i>
+            <h3>Advance Payment Tracking</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Description</th>
+                  <th>Category</th>
+                  <th>PR/SO #</th>
+                  <th>WO/SO #</th>
+                  <th>PO #</th>
+                  <th>Supplier</th>
+                  <th>Adv (⃁)</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="advance-tbody"></tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
+    </main>
 
-      <!-- PO Approvals -->
-      <div class="table-container">
-        <h3 style="margin-bottom: 1rem; color: var(--primary);">PO Approvals</h3>
-        <table id="po-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>PR/SO #</th>
-              <th>PO #</th>
-              <th>Supplier</th>
-              <th>SAR Amount</th>
-              <th>Status</th>
-              <th style="width: 80px;"></th>
-            </tr>
-          </thead>
-          <tbody id="po-tbody"></tbody>
-        </table>
-      </div>
-
-      <!-- Advance Approvals -->
-      <div class="table-container" style="margin-top: 3rem;">
-        <h3 style="margin-bottom: 1rem; color: var(--secondary);">Advance Approvals</h3>
-        <table id="advance-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>PR/SO #</th>
-              <th>PO #</th>
-              <th>Supplier</th>
-              <th>Adv (SAR)</th>
-              <th>Notes</th>
-              <th>Status</th>
-              <th style="width: 80px;"></th>
-            </tr>
-          </thead>
-          <tbody id="advance-tbody"></tbody>
-        </table>
-      </div>
-    </section>
-  </div>
-
-  <!-- Settings Modal -->
-  <div class="modal" id="settings-modal">
-    <div class="modal-content glass">
-      <div class="modal-header">
-        <h3>Configuration Settings</h3>
-        <button class="btn-icon" id="btn-close-settings">
-          <i data-lucide="x"></i>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="input-group">
-          <label for="input-send-time">Daily Email Send Time (24h)</label>
-          <input type="time" id="input-send-time">
+    <!-- Modals -->
+    <div id="settings-modal" class="modal-overlay">
+      <div class="modal glass">
+        <div class="modal-header">
+          <h3><i data-lucide="settings"></i> Sync & Dispatch Settings</h3>
+          <button class="btn-close" id="btn-close-settings">&times;</button>
         </div>
-        <div style="margin-top: 1.5rem;">
-          <button class="btn btn-primary" id="btn-finalize" style="width: 100%; height: 44px; margin-bottom: 0.75rem; justify-content: center;">
-            <i data-lucide="send"></i> Dispatch Final Summary Now
-          </button>
-          <div style="display: flex; gap: 1rem;">
-            <button class="btn btn-outline" id="btn-save-settings" style="flex: 2;">Save Configuration</button>
-            <button class="btn btn-outline" id="btn-test-send" style="flex: 1;">Test Send</button>
+        <div class="modal-body">
+          <div class="input-group">
+            <label>Daily Auto-Send Time (24h)</label>
+            <input type="time" id="input-send-time">
+          </div>
+          <div class="modal-actions">
+            <button id="btn-finalize" class="btn btn-primary full-width">
+              <i data-lucide="send"></i> Dispatch Final Summary Now
+            </button>
+            <button id="btn-save-settings" class="btn btn-secondary full-width">Save Settings</button>
           </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Success Modal -->
-  <div class="modal" id="success-modal">
-    <div class="modal-content glass" style="max-width: 400px; text-align: center; padding: 2.5rem;">
-      <div style="width: 70px; height: 70px; background: var(--success); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem;">
-        <i data-lucide="check" style="width: 40px; height: 40px; color: white;"></i>
+    <div id="success-modal" class="modal-overlay">
+      <div class="modal glass success-modal">
+        <i data-lucide="check-circle" class="success-icon"></i>
+        <h2>Dispatch Successful!</h2>
+        <p>Your approval summary has been sent to the Manager and CC list.</p>
+        <button onclick="document.getElementById('success-modal').classList.remove('active')" class="btn btn-primary">Done</button>
       </div>
-      <h2 style="color: var(--success); margin-bottom: 0.5rem;">Dispatch Successful!</h2>
-      <p class="text-muted" style="margin-bottom: 2rem;">The final summary has been sent to the manager and CC recipients.</p>
-      <button class="btn btn-primary" id="btn-close-success" style="width: 100%; justify-content: center;">Done</button>
     </div>
+
+    <!-- Toast Component -->
+    <div id="toast-container"></div>
   </div>
 
-  <div id="toast-container"></div>
   <script src="script.js"></script>
 </body>
 </html>

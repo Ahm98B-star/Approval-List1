@@ -1,433 +1,344 @@
-/**
- * Approval System Management Tool
- * Premium Version (CC Tags + Edit Mode)
- */
-
-// --- STATE MANAGEMENT ---
-let entries = [];
-let suppliers = JSON.parse(localStorage.getItem('approval_suppliers')) || [];
-let currentTheme = localStorage.getItem('approval_theme') || 'dark';
-
-// --- CONFIGURATION ---
-const SUPABASE_URL = 'https://gwrkdhhghuynowmqzwxp.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_5mcdvM_jJDmxncG4Gr2LDw_3Q2ReD4D';
-let supabaseClient;
-try {
-  if (typeof supabase !== 'undefined') {
-    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log("✅ Supabase Engine Loaded.");
-  } else {
-    alert("CRITICAL ERROR: Supabase library failed to load! Please check your internet connection.");
-  }
-} catch (e) { 
-  console.error("❌ Supabase Initialization Error:", e);
-}
-
-const EMAILJS_PUBLIC_KEY = 'iOabUF7I4IR2pyt6q';
+// CONFIGURATION
+const SUPABASE_URL = 'https://oigjdfdfovmxfjsvpplv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pZ2pkZmRmb3ZteGZqc3ZwcGx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwNDU3MDUsImV4cCI6MjA1NzYyMTcwNX0.J_gXGvQYmO9Y8T6eR0t1-N-a7T7L4H6Y1z7q8v9p';
 const EMAILJS_SERVICE_ID = 'service_pz1v6gq';
 const EMAILJS_TEMPLATE_ID = 'template_t156fbg';
+const EMAILJS_PUBLIC_KEY = 'iOabUF7I4IR2pyt6q';
 
-const exchangeRates = {
-  SAR: 1, USD: 3.75, EUR: 4.02, GBP: 4.75, AED: 1.02, QAR: 1.03, KWD: 12.20, BHD: 9.95, OMR: 9.74,
-  JPY: 0.025, CNY: 0.52, INR: 0.045, EGP: 0.078, JOD: 5.29, PKR: 0.013, THB: 0.10, TRY: 0.11,
-  IDR: 0.00024, MYR: 0.81, VND: 0.00015, PHP: 0.067, KRW: 0.0028, CHF: 4.25, CAD: 2.75,
-  AUD: 2.45, NZD: 2.25, SEK: 0.35, NOK: 0.34, DKK: 0.54, SGD: 2.80, HKD: 0.48, MXN: 0.22,
-  BRL: 0.75, ZAR: 0.20, RUB: 0.041, ILS: 1.01, TWD: 0.12, CZK: 0.16, HUF: 0.010, PLN: 0.94, LBP: 0.00004
-};
+let supabaseClient = null;
+let entries = [];
+let editMode = false;
+let currentEditingId = null;
+let dailySendTime = '09:00';
+let managerEmail = '';
+let ccEmailsArray = [];
+let isSendingNow = false;
 
-// --- UI ELEMENTS ---
+// SELECTORS
+const approvalForm = document.getElementById('approval-form');
+const poTbody = document.getElementById('po-tbody');
+const advanceTbody = document.getElementById('advance-tbody');
 const poDateSpan = document.getElementById('po-date');
-const approvalTypeSelect = document.getElementById('approval-type');
-const advanceFields = document.getElementById('advance-fields');
 const amountInput = document.getElementById('amount');
 const currencySelect = document.getElementById('currency');
 const amountSarInput = document.getElementById('amount-sar');
+const advanceFields = document.getElementById('advance-fields');
+const approvalTypeSelect = document.getElementById('approval-type');
 const advancePercentSelect = document.getElementById('advance-percent');
-const customPercentGroup = document.getElementById('custom-percent-group');
 const customPercentInput = document.getElementById('custom-percent');
+const customPercentGroup = document.getElementById('custom-percent-group');
 const advanceAmountInput = document.getElementById('advance-amount');
-const supplierInput = document.getElementById('supplier');
-const supplierDatalist = document.getElementById('supplier-list');
-const entryForm = document.getElementById('entry-form');
-const poTbody = document.getElementById('po-tbody');
-const advanceTbody = document.getElementById('advance-tbody');
-const btnExport = document.getElementById('btn-export');
-const btnFinalize = document.getElementById('btn-finalize');
-const themeToggle = document.getElementById('theme-toggle');
-const poNumberInput = document.getElementById('po-number');
-const prSoInput = document.getElementById('pr-so-number');
-const notesInput = document.getElementById('notes');
-const btnCancelEdit = document.getElementById('btn-cancel-edit');
-const btnLogEntry = document.getElementById('btn-log-entry');
-
-// Dispatch Elements
 const inputManagerEmail = document.getElementById('input-manager-email');
-const ccTagsContainer = document.getElementById('cc-tags-container');
-const newCcInput = document.getElementById('new-cc-input');
-const btnAddCc = document.getElementById('btn-add-cc');
-
-// Settings Modal Elements
-const settingsModal = document.getElementById('settings-modal');
+const inputSendTime = document.getElementById('input-send-time');
 const btnSettings = document.getElementById('btn-settings');
+const settingsModal = document.getElementById('settings-modal');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 const btnSaveSettings = document.getElementById('btn-save-settings');
-const inputSendTime = document.getElementById('input-send-time');
-const displaySendTime = document.getElementById('display-send-time');
-const toggleHistory = document.getElementById('toggle-history');
-const btnTestSend = document.getElementById('btn-test-send');
+const btnFinalize = document.getElementById('btn-finalize');
+const btnCancelEdit = document.getElementById('btn-cancel-edit');
 
-// App State
-let dailySendTime = '14:00';
-let managerEmail = 'a.bazuhair@amco-saudi.com';
-let ccEmailsArray = [];
-let isSendingNow = false;
-let showHistory = false;
-let editMode = false;
-let currentEditingId = null;
+// HELPERS
+const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+const getNum = (id) => parseFloat(getVal(id)) || 0;
 
-// --- INITIALIZE ---
-async function init() {
-  document.documentElement.setAttribute('data-theme', currentTheme);
-  updateThemeIcons();
-  const today = new Date().toISOString().split('T')[0];
-  if (poDateSpan) poDateSpan.textContent = today;
-  if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
-  
-  await loadSettings();
-  await loadEntries();
-  updateSupplierDatalist();
-  subscribeToChanges();
-  setInterval(checkSchedule, 60000);
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span>${msg}</span>`;
+  container.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
 }
 
-// --- DATABASE LOGIC ---
-async function loadEntries() {
-  if (!supabaseClient) return;
-  let query = supabaseClient.from('entries').select('*');
-  if (!showHistory) query = query.eq('is_sent', false);
-  const { data, error } = await query.order('created_at', { ascending: false });
-  if (error) {
-    console.error("Load Entries Error:", error);
-    showToast('Failed to load table data', 'error');
-  } else {
-    entries = data.map(i => ({
-      id: i.id, 
-      type: i.approval_type, 
-      date: i.po_date, 
-      prSo: i.pr_so_number, 
-      po: i.po_number,
-      supplier: i.supplier, 
-      amount: i.amount, 
-      currency: i.currency, 
-      amountSar: i.amount_sar,
-      advancePercent: i.advance_percent, 
-      advanceAmount: i.advance_amount, 
-      notes: i.notes,
-      description: i.description,
-      status: i.status || 'Pending', 
-      is_sent: i.is_sent
-    }));
-    renderDashboard();
+// INITIALIZATION
+async function init() {
+  try {
+    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
+    
+    lucide.createIcons();
+    poDateSpan.textContent = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    await loadSettings();
+    await loadEntries();
+    subscribeToChanges();
+    initTheme();
+    calculate();
+    setInterval(checkSchedule, 60000); // Check every minute
+  } catch (err) {
+    showToast('Initialization Error: Check Database Key', 'error');
   }
+}
+
+// DATABASE LOGIC
+async function loadSettings() {
+  const { data } = await supabaseClient.from('settings').select('*');
+  if (data) {
+    const sTime = data.find(i => i.key === 'send_time');
+    const sEmail = data.find(i => i.key === 'manager_email');
+    const sCC = data.find(i => i.key === 'cc_emails');
+    
+    if (sTime) { dailySendTime = sTime.value; inputSendTime.value = dailySendTime; }
+    if (sEmail) { managerEmail = sEmail.value; inputManagerEmail.value = managerEmail; }
+    if (sCC) { 
+      ccEmailsArray = sCC.value ? sCC.value.split(',').map(e => e.trim()).filter(e=>e) : [];
+      renderCcTags();
+    }
+  }
+}
+
+async function updateSettings() {
+  const newTime = inputSendTime.value;
+  const newEmail = inputManagerEmail.value.trim();
+  const newCC = ccEmailsArray.join(',');
+
+  try {
+    await supabaseClient.from('settings').upsert([{ key: 'send_time', value: newTime }], { onConflict: 'key' });
+    await supabaseClient.from('settings').upsert([{ key: 'manager_email', value: newEmail }], { onConflict: 'key' });
+    await supabaseClient.from('settings').upsert([{ key: 'cc_emails', value: newCC }], { onConflict: 'key' });
+    
+    dailySendTime = newTime;
+    managerEmail = newEmail;
+    showToast('Settings Saved!', 'success');
+    settingsModal.classList.remove('active');
+  } catch (e) { showToast('Sync Failed', 'error'); }
+}
+
+async function loadEntries() {
+  const { data, error } = await supabaseClient.from('entries').select('*').order('created_at', { ascending: false });
+  if (error) return showToast('Load Failed', 'error');
+  entries = data.map(i => ({
+    id: i.id,
+    date: i.po_date,
+    prSo: i.pr_so_number,
+    po: i.po_number,
+    woSo: i.wo_so_number,
+    description: i.description,
+    category: i.category,
+    supplier: i.supplier,
+    amount: i.amount,
+    currency: i.currency,
+    amountSar: i.amount_sar,
+    advancePercent: i.advance_percent,
+    advanceAmount: i.advance_amount,
+    notes: i.notes,
+    is_sent: i.is_sent,
+    status: i.status || 'Pending'
+  }));
+  renderDashboard();
 }
 
 async function createEntry(e) {
   if (e) e.preventDefault();
-  if (!supabaseClient) return;
   
-  // Safe Selectors
-  const getVal = (id) => {
-    const el = document.getElementById(id);
-    return el ? el.value : '';
-  };
-  const getNum = (id) => parseFloat(getVal(id)) || 0;
-
   const entryData = {
-    approval_type: getVal('approval-type') || 'PO Approval', 
-    pr_so_number: getVal('pr-so-number'), 
+    approval_type: getVal('approval-type') || 'PO Approval',
+    pr_so_number: getVal('pr-so-number'),
     po_number: getVal('po-number'),
-    supplier: getVal('supplier'), 
-    amount: getNum('amount'), 
-    currency: getVal('currency') || 'SAR',
-    amount_sar: getNum('amount-sar'), 
+    wo_so_number: getVal('wo-so-number'),
     description: getVal('description'),
-    notes: getVal('notes'),
+    category: getVal('category'),
+    supplier: getVal('supplier'),
+    amount: getNum('amount'),
+    currency: getVal('currency'),
+    amount_sar: getNum('amount-sar'),
     advance_percent: (getVal('advance-percent') === 'custom' ? getNum('custom-percent') : getNum('advance-percent')),
     advance_amount: getNum('advance-amount'),
-    po_date: poDateSpan ? poDateSpan.textContent : new Date().toISOString().split('T')[0], 
-    is_sent: false, 
+    notes: getVal('notes'),
+    po_date: poDateSpan.textContent,
+    is_sent: false,
     status: 'Pending'
   };
 
   try {
-    showToast(editMode ? 'Updating Entry...' : 'Logging Entry...', 'info');
-    
     const { error } = editMode 
       ? await supabaseClient.from('entries').update(entryData).eq('id', currentEditingId)
       : await supabaseClient.from('entries').insert([entryData]);
 
     if (error) throw error;
-    
-    showToast(editMode ? 'Success!' : 'Successfully Logged!', 'success');
+    showToast(editMode ? 'Success!' : 'Logged!', 'success');
+    approvalForm.reset();
     cancelEdit();
+    calculate();
     await loadEntries();
-  } catch (err) { 
-    console.error("Database Error:", err);
-    showToast('Error: ' + (err.message || 'Check database connection'), 'error'); 
-  }
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
 
 async function deleteEntry(id) {
-  if (!confirm('Are you sure you want to delete this entry?')) return;
-  try {
-    const { error } = await supabaseClient.from('entries').delete().eq('id', id);
-    if (error) throw error;
-    showToast('Deleted from Database', 'warning');
+  if (confirm('Delete this record?')) {
+    await supabaseClient.from('entries').delete().eq('id', id);
     await loadEntries();
-  } catch (e) { showToast('Delete Failed', 'error'); }
+  }
 }
 
-// --- EDIT WORKFLOW ---
-window.startEdit = function(id) {
-  const e = entries.find(x => x.id === id);
+// EDITING
+function startEdit(id) {
+  const e = entries.find(i => i.id === id);
   if (!e) return;
-  
   editMode = true;
   currentEditingId = id;
+  document.getElementById('form-title').textContent = 'Editing Approval Record';
+  btnCancelEdit.style.display = 'inline-flex';
   
-  // Fill Form
-  if (poDateSpan) poDateSpan.textContent = e.date;
-  if (approvalTypeSelect) approvalTypeSelect.value = e.type;
-  if (prSoInput) prSoInput.value = e.prSo || '';
-  if (poNumberInput) poNumberInput.value = e.po || '';
-  if (supplierInput) supplierInput.value = e.supplier || '';
-  if (amountInput) amountInput.value = e.amount || 0;
-  if (currencySelect) currencySelect.value = e.currency || 'SAR';
-  if (notesInput) notesInput.value = e.notes || '';
+  document.getElementById('approval-type').value = (e.advanceAmount > 0) ? 'Advance Approval' : 'PO Approval';
+  document.getElementById('pr-so-number').value = e.prSo || '';
+  document.getElementById('po-number').value = e.po || '';
+  document.getElementById('wo-so-number').value = e.woSo || '';
+  document.getElementById('description').value = e.description || '';
+  document.getElementById('category').value = e.category || '';
+  document.getElementById('supplier').value = e.supplier || '';
+  document.getElementById('amount').value = e.amount;
+  document.getElementById('currency').value = e.currency;
+  document.getElementById('notes').value = e.notes || '';
   
-  if (approvalTypeSelect.value === 'Advance Approval') {
-    advanceFields.style.display = 'grid';
-    if (advancePercentSelect) advancePercentSelect.value = e.advancePercent || 0;
-  } else {
-    advanceFields.style.display = 'none';
+  if (e.advanceAmount > 0) {
+    advancePercentSelect.value = 'custom';
+    customPercentGroup.style.display = 'block';
+    customPercentInput.value = e.advancePercent;
   }
-
-  // Change UI
-  if (btnCancelEdit) btnCancelEdit.style.display = 'flex';
-  if (btnLogEntry) btnLogEntry.innerHTML = '<i data-lucide="save"></i> Update Existing Entry';
   
-  calculate();
   window.scrollTo({ top: 0, behavior: 'smooth' });
-};
+  calculate();
+}
 
 function cancelEdit() {
   editMode = false;
   currentEditingId = null;
-  entryForm.reset();
-  if (btnCancelEdit) btnCancelEdit.style.display = 'none';
-  if (btnLogEntry) btnLogEntry.innerHTML = '<i data-lucide="plus-circle"></i> Log Entry into Team Database';
-  advanceFields.style.display = 'none';
+  document.getElementById('form-title').textContent = 'Create New Approval Record';
+  btnCancelEdit.style.display = 'none';
+  approvalForm.reset();
   calculate();
 }
 
-// --- CALCULATION ENGINE ---
-function calculate() {
-  const amount = parseFloat(amountInput.value) || 0;
-  const rate = exchangeRates[currencySelect.value] || 1;
-  const sarAmount = amount * rate;
-  if (amountSarInput) amountSarInput.value = sarAmount.toFixed(2);
-
-  if (approvalTypeSelect.value === 'Advance Approval') {
-    const p = advancePercentSelect.value === 'custom' ? parseFloat(customPercentInput.value) : parseFloat(advancePercentSelect.value);
-    const adv = (sarAmount * (p || 0)) / 100;
-    if (advanceAmountInput) advanceAmountInput.value = adv.toFixed(2);
-  }
-}
-
-// --- SETTINGS & CC LOGIC ---
-async function loadSettings() {
-  if (!supabaseClient) return;
-  const { data } = await supabaseClient.from('settings').select('*');
-  if (data) {
-    data.forEach(s => {
-      if (s.key === 'daily_send_time') {
-        dailySendTime = s.value;
-        if (inputSendTime) inputSendTime.value = s.value;
-        if (displaySendTime) displaySendTime.textContent = format12h(s.value);
-      }
-      if (s.key === 'manager_email') {
-        managerEmail = s.value;
-        if (inputManagerEmail) inputManagerEmail.value = s.value;
-      }
-      if (s.key === 'cc_emails') {
-        ccEmailsArray = s.value ? s.value.split(',').map(e => e.trim()).filter(e=>e) : [];
-        renderCcTags();
-      }
-    });
-  }
-}
-
-async function updateSettings() {
-  if (!supabaseClient) return;
-  const newTime = inputSendTime.value;
-  const newEmail = inputManagerEmail.value.trim();
-  const newCC = ccEmailsArray.join(',');
-  try {
-    const { error } = await supabaseClient.from('settings').upsert([
-      { key: 'daily_send_time', value: newTime },
-      { key: 'manager_email', value: newEmail },
-      { key: 'cc_emails', value: newCC }
-    ], { onConflict: 'key' });
-    
-    if (error) throw error;
-    
-    dailySendTime = newTime; managerEmail = newEmail;
-    if (displaySendTime) displaySendTime.textContent = format12h(newTime);
-    if (settingsModal.classList.contains('active')) {
-      settingsModal.classList.remove('active');
-      showToast('Configuration Updated', 'success');
-    }
-  } catch (e) { 
-    showToast('Failed to save settings', 'error'); 
-  }
-}
-
-function renderCcTags() {
-  if (!ccTagsContainer) return;
-  // Clear tags but keep the input
-  const tags = ccTagsContainer.querySelectorAll('.cc-tag');
-  tags.forEach(t => t.remove());
-  
-  ccEmailsArray.forEach((email, index) => {
-    const tag = document.createElement('div');
-    tag.className = 'cc-tag';
-    tag.innerHTML = `<span>${email}</span><span class="remove-btn" onclick="removeCcTag(${index})"><i data-lucide="x" style="width:14px;"></i></span>`;
-    ccTagsContainer.insertBefore(tag, newCcInput);
-  });
-  if (typeof lucide !== 'undefined') lucide.createIcons();
-}
-
-window.addCcFromInput = function() {
-  const email = newCcInput.value.trim();
-  if (email && email.includes('@') && !ccEmailsArray.includes(email)) {
-    ccEmailsArray.push(email);
-    newCcInput.value = '';
-    renderCcTags();
-    updateSettings(); // Auto-save on change
-  }
-};
-
-window.removeCcTag = function(index) {
-  ccEmailsArray.splice(index, 1);
-  renderCcTags();
-  updateSettings(); // Auto-save on change
-};
-
-// --- UI HELPERS ---
+// RENDER
 function renderDashboard() {
-  const poData = entries.filter(e => e.type === 'PO Approval');
-  const advData = entries.filter(e => e.type === 'Advance Approval');
-  
-  if (poTbody) poTbody.innerHTML = poData.map(e => `
+  const pos = entries.filter(i => (i.advanceAmount === 0 || !i.advanceAmount));
+  const advs = entries.filter(i => i.advanceAmount > 0);
+
+  if (poTbody) poTbody.innerHTML = pos.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td>${e.date}</td>
-      <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.description || ''}">
-        ${e.description || '-'}
-      </td>
+      <td title="${e.description || ''}">${e.description || '-'}</td>
+      <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
       <td>${e.prSo || '-'}</td>
+      <td>${e.woSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
       <td>${(e.amountSar || 0).toLocaleString()}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
-      <td style="text-align:right; white-space:nowrap;">
+      <td>
         ${!e.is_sent ? `
-          <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
-          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+          <button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
+          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
         ` : ''}
       </td>
     </tr>
   `).join('');
 
-  if (advanceTbody) advanceTbody.innerHTML = advData.map(e => `
+  if (advanceTbody) advanceTbody.innerHTML = advs.map(e => `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td>${e.date}</td>
-      <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.description || ''}">
-        ${e.description || '-'}
-      </td>
+      <td title="${e.description || ''}">${e.description || '-'}</td>
+      <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
       <td>${e.prSo || '-'}</td>
+      <td>${e.woSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
       <td>${(e.advanceAmount || 0).toLocaleString()}</td>
-      <td style="font-size: 0.8rem; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.notes || ''}">
-        ${e.notes || '-'}
-      </td>
+      <td>${e.notes ? 'Yes' : '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
-      <td style="text-align:right; white-space:nowrap;">
+      <td>
         ${!e.is_sent ? `
-          <button onclick="startEdit('${e.id}')" class="btn btn-outline btn-icon" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
-          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger btn-icon" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+          <button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>
+          <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
         ` : ''}
       </td>
     </tr>
   `).join('');
-  if (typeof lucide !== 'undefined') lucide.createIcons();
+  
+  lucide.createIcons();
 }
 
-async function checkSchedule() {
-  const now = new Date();
-  const time = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
-  if (time === dailySendTime && !isSendingNow && entries.some(e=>!e.is_sent)) await sendEmailToManager(false);
+// CC TAGS
+function renderCcTags() {
+  const list = document.getElementById('cc-tags-list');
+  list.innerHTML = ccEmailsArray.map((e, i) => `
+    <div class="tag">${e} <i data-lucide="x" onclick="removeCcTag(${i})" style="width:12px;"></i></div>
+  `).join('');
+  lucide.createIcons();
+}
+
+window.addCcFromInput = function() {
+  const input = document.getElementById('new-cc-input');
+  const email = input.value.trim();
+  if (email && email.includes('@') && !ccEmailsArray.includes(email)) {
+    ccEmailsArray.push(email);
+    input.value = '';
+    renderCcTags();
+    updateSettings();
+  }
+};
+
+window.removeCcTag = function(i) {
+  ccEmailsArray.splice(i, 1);
+  renderCcTags();
+  updateSettings();
+};
+
+// LOGIC
+function calculate() {
+  const amt = getNum('amount');
+  const rates = { 'SAR': 1, 'USD': 3.75, 'EUR': 4.10, 'GBP': 4.80 };
+  const sar = amt * (rates[currencySelect.value] || 1);
+  amountSarInput.value = sar.toFixed(2);
+
+  if (approvalTypeSelect.value === 'Advance Approval') {
+    advanceFields.style.display = 'grid';
+    const p = (getVal('advance-percent') === 'custom') ? getNum('custom-percent') : getNum('advance-percent');
+    advanceAmountInput.value = (sar * p / 100).toFixed(2);
+  } else {
+    advanceFields.style.display = 'none';
+    advanceAmountInput.value = 0;
+  }
 }
 
 async function sendEmailToManager(isTest = false) {
   const pending = entries.filter(e => !e.is_sent);
-  if (pending.length === 0) {
-    showToast('Nothing to send! No pending entries found.', 'warning');
-    return;
-  }
-  isSendingNow = true;
-  const btn = isTest ? btnTestSend : btnFinalize;
-  const original = btn ? btn.innerHTML : "";
+  if (pending.length === 0) return showToast('Nothing to send!', 'warning');
+  
+  if (!managerEmail) return showToast('Set Manager Email first', 'error');
+
+  const btn = isTest ? null : btnFinalize;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Sending...'; lucide.createIcons(); }
+
   try {
-    if (btn) { 
-      btn.disabled = true; 
-      btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Dispatching...'; 
-      if (typeof lucide !== 'undefined') lucide.createIcons();
-    }
-    const pos = pending.filter(e => e.type === 'PO Approval');
-    const advs = pending.filter(e => e.type === 'Advance Approval');
-    
-    // Header for PO Table
-    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
-    if(pos.length) poH += `</table>`;
+    const pos = pending.filter(i => (i.advanceAmount === 0 || !i.advanceAmount));
+    const advs = pending.filter(i => i.advanceAmount > 0);
 
-    // Header for Advance Table (NEW COLUMNS ADDED)
-    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:11px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>PR/SO #</th><th>PO #</th><th>Supplier</th><th>Full SAR</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.prSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes || '-'}</td></tr>`);
-    if(advs.length) advH += `</table>`;
+    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (⃁)</th></tr>` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category || '-'}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td></tr>`);
+    if(pos.length) poH += "</table>";
 
-    if (!managerEmail || !managerEmail.includes('@')) {
-      showToast('Error: Please enter a valid Manager Email on the dashboard!', 'error');
-      isSendingNow = false;
-      if(btn) { btn.disabled = false; btn.innerHTML = original; }
-      return;
-    }
+    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
+      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (⃁)</th><th>Adv %</th><th>Adv (⃁)</th></tr>` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category || '-'}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po || '-'}</td><td>${e.supplier || '-'}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td></tr>`);
+    if(advs.length) advH += "</table>";
 
-    const ccList = ccEmailsArray.join(', ');
     const totalPoSum = pos.reduce((a, b) => a + (b.amountSar || 0), 0);
     const totalAdvSum = advs.reduce((a, b) => a + (b.advanceAmount || 0), 0);
     const grandTotal = totalPoSum + totalAdvSum;
-
-    console.log("📨 Dispatching to:", managerEmail, "| CC:", ccList);
+    
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const emailSubject = "GM Procurement Approval Request - " + todayStr;
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      subject_line: emailSubject,
       to_email: managerEmail,
-      cc_email: ccList,
+      cc_email: ccEmailsArray.join(', '),
       po_table: poH,
-      advance_table: advH,
+      adv_table: advH,
       summary_count: pending.length,
       total_po_sar: totalPoSum.toLocaleString(),
       total_adv_sar: totalAdvSum.toLocaleString(),
@@ -435,93 +346,71 @@ async function sendEmailToManager(isTest = false) {
     });
 
     if (!isTest) {
-      await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(e=>e.id));
+      await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(e => e.id));
       await loadEntries();
+      document.getElementById('success-modal').classList.add('active');
     }
-    
-    // 🔥 NEW: Trigger Success Modal
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-    const successModal = document.getElementById('success-modal');
-    if (successModal) successModal.classList.add('active');
+    showToast('Sent!', 'success');
   } catch (err) { 
-    console.error("EmailJS Full Error:", err);
-    showToast('Dispatch Failed: ' + (err.text || 'Check API Settings'), 'error'); 
+    console.error(err);
+    showToast('Failed: Check API Settings', 'error'); 
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; lucide.createIcons(); }
   }
-  finally { if(btn) { btn.disabled = false; btn.innerHTML = original; } isSendingNow = false; }
 }
 
-function format12h(t) {
-  const [h, m] = t.split(':');
-  return `${((h%12)||12)}:${m} ${h>=12?'PM':'AM'}`;
+async function checkSchedule() {
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  if (timeStr === dailySendTime && !isSendingNow && entries.some(e=>!e.is_sent)) await sendEmailToManager();
 }
-function showToast(m, t) {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = 'glass fade-in';
-  div.style = `padding:0.75rem 1.5rem; border-left:4px solid ${t==='success'?'var(--success)':'var(--secondary)'}`;
-  div.innerHTML = `<p>${m}</p>`;
-  container.appendChild(div);
-  setTimeout(() => div.remove(), 3000);
-}
-function updateSupplierDatalist() {
-  if (!supplierDatalist) return;
-  const unique = [...new Set(entries.map(e => e.supplier))];
-  supplierDatalist.innerHTML = unique.map(s => `<option value="${s}">`).join('');
-}
-function toggleTheme() {
-  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', currentTheme);
-  localStorage.setItem('approval_theme', currentTheme);
-  updateThemeIcons();
-}
-function updateThemeIcons() {
-  const icon = themeToggle ? themeToggle.querySelector('i') : null;
-  if (icon) {
-    icon.setAttribute('data-lucide', currentTheme === 'dark' ? 'sun' : 'moon');
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-  }
-}
+
 function subscribeToChanges() {
-  if (supabaseClient) supabaseClient.channel('entries_realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, loadEntries).subscribe();
+  supabaseClient.channel('custom-all-channel').on('postgres_changes', { event: '*', schema: 'public', table: 'entries' }, () => {
+    loadEntries();
+  }).subscribe();
 }
 
-// --- LISTENERS ---
-if (entryForm) entryForm.addEventListener('submit', createEntry);
-if (btnCancelEdit) btnCancelEdit.addEventListener('click', cancelEdit);
-if (amountInput) amountInput.addEventListener('input', calculate);
-if (currencySelect) currencySelect.addEventListener('change', calculate);
-if (approvalTypeSelect) approvalTypeSelect.addEventListener('change', () => {
-  advanceFields.style.display = approvalTypeSelect.value === 'Advance Approval' ? 'grid' : 'none';
-  calculate();
-});
-if (advancePercentSelect) advancePercentSelect.addEventListener('change', () => {
-  customPercentGroup.style.display = advancePercentSelect.value === 'custom' ? 'block' : 'none';
-  calculate();
-});
-if (customPercentInput) customPercentInput.addEventListener('input', calculate);
-if (btnSettings) btnSettings.addEventListener('click', () => settingsModal.classList.add('active'));
-if (btnCloseSettings) btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
-if (btnSaveSettings) btnSaveSettings.addEventListener('click', updateSettings);
-if (toggleHistory) toggleHistory.addEventListener('change', e => { showHistory = e.target.checked; loadEntries(); });
-const btnCloseSuccess = document.getElementById('btn-close-success');
-if (btnCloseSuccess) btnCloseSuccess.addEventListener('click', () => {
-  const sm = document.getElementById('success-modal');
-  if (sm) sm.classList.remove('active');
-});
-if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
-if (btnFinalize) btnFinalize.addEventListener('click', () => sendEmailToManager(false));
-if (btnTestSend) btnTestSend.addEventListener('click', () => sendEmailToManager(true));
-if (inputManagerEmail) inputManagerEmail.addEventListener('change', updateSettings);
-if (btnAddCc) btnAddCc.addEventListener('click', addCcFromInput);
-if (newCcInput) newCcInput.addEventListener('keydown', e => e.key==='Enter' && (e.preventDefault(), addCcFromInput()));
-if (btnExport) btnExport.addEventListener('click', () => {
-  if (entries.length === 0) return showToast('No data to export', 'error');
-  const wb = XLSX.utils.book_new();
-  const mapD = (e) => ({ Date: e.date, 'PR/SO': e.prSo || '-', PO: e.po || '-', Supplier: e.supplier || '-', SAR: (e.amountSar || 0) });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='PO Approval').map(mapD)), "PO");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(entries.filter(e=>e.type==='Advance Approval').map(mapD)), "Advance");
-  XLSX.writeFile(wb, `Approvals_${new Date().toISOString().split('T')[0]}.xlsx`);
-});
+// THEME LOGIC
+function initTheme() {
+  const saved = localStorage.getItem('theme_preference') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  const icon = document.getElementById('theme-icon');
+  if (icon) {
+    icon.setAttribute('data-lucide', saved === 'dark' ? 'sun' : 'moon');
+    if (window.lucide) lucide.createIcons();
+  }
+}
 
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const target = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', target);
+  localStorage.setItem('theme_preference', target);
+  const icon = document.getElementById('theme-icon');
+  if (icon) {
+    icon.setAttribute('data-lucide', target === 'dark' ? 'sun' : 'moon');
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// LISTENERS
+approvalForm.addEventListener('submit', createEntry);
+amountInput.addEventListener('input', calculate);
+currencySelect.addEventListener('change', calculate);
+approvalTypeSelect.addEventListener('change', calculate);
+advancePercentSelect.addEventListener('change', () => {
+  customPercentGroup.style.display = (advancePercentSelect.value === 'custom') ? 'block' : 'none';
+  calculate();
+});
+customPercentInput.addEventListener('input', calculate);
+btnSettings.addEventListener('click', () => settingsModal.classList.add('active'));
+btnCloseSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
+btnSaveSettings.addEventListener('click', updateSettings);
+btnFinalize.addEventListener('click', () => sendEmailToManager(false));
+btnCancelEdit.addEventListener('click', cancelEdit);
+inputManagerEmail.addEventListener('change', updateSettings);
+document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
+
+// START
 init();
