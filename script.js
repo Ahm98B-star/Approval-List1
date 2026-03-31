@@ -1,9 +1,9 @@
 // CONFIGURATION
-const SUPABASE_URL = 'https://oigjdfdfovmxfjsvpplv.supabase.co';
+let SUPABASE_URL = localStorage.getItem('supabase_project_url') || '';
 let SUPABASE_ANON_KEY = localStorage.getItem('supabase_anon_key') || '';
-const EMAILJS_SERVICE_ID = 'service_pz1v6gq';
-const EMAILJS_TEMPLATE_ID = 'template_t156fbg';
-const EMAILJS_PUBLIC_KEY = 'iOabUF7I4IR2pyt6q';
+let EMAILJS_SERVICE_ID = localStorage.getItem('emailjs_service_id') || '';
+let EMAILJS_TEMPLATE_ID = localStorage.getItem('emailjs_template_id') || '';
+let EMAILJS_PUBLIC_KEY = localStorage.getItem('emailjs_public_key') || '';
 
 let supabaseClient = null;
 let entries = [];
@@ -59,14 +59,16 @@ async function init() {
   poDateSpan.textContent = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   initTheme();
 
-  if (!SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     setupModal.classList.add('active');
     return;
   }
 
   try {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC_KEY);
+    if (typeof emailjs !== 'undefined' && EMAILJS_PUBLIC_KEY) {
+      emailjs.init(EMAILJS_PUBLIC_KEY);
+    }
 
     await loadSettings();
     await loadEntries();
@@ -79,13 +81,22 @@ async function init() {
 }
 
 async function activateDashboard() {
-  const key = document.getElementById('setup-db-key').value.trim();
-  if (!key) return showToast('Please enter the team database key', 'error');
+  const urlEl = document.getElementById('setup-db-url');
+  const keyEl = document.getElementById('setup-db-key');
+  const url = urlEl ? urlEl.value.trim() : '';
+  const key = keyEl ? keyEl.value.trim() : '';
+  
+  if (!url || !key) return showToast('Please enter both the Project URL and the Team Database Key', 'error');
 
+  // Basic cleanup in case they pasted the full URL incorrectly
+  const cleanUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+
+  localStorage.setItem('supabase_project_url', cleanUrl);
   localStorage.setItem('supabase_anon_key', key);
+  SUPABASE_URL = cleanUrl;
   SUPABASE_ANON_KEY = key;
   setupModal.classList.remove('active');
-  window.location.reload(); // Restart with the new key
+  window.location.reload(); // Restart with the new connection
 }
 
 // DATABASE LOGIC
@@ -97,6 +108,16 @@ async function loadSettings() {
     const sCC = data.find(i => i.key === 'cc_emails');
 
     inputDbKey.value = SUPABASE_ANON_KEY;
+    const inputUrl = document.getElementById('input-db-url');
+    if (inputUrl) inputUrl.value = SUPABASE_URL;
+
+    const inputEmailSvc = document.getElementById('input-emailjs-svc');
+    const inputEmailTpl = document.getElementById('input-emailjs-tpl');
+    const inputEmailPub = document.getElementById('input-emailjs-pub');
+    if (inputEmailSvc) inputEmailSvc.value = EMAILJS_SERVICE_ID;
+    if (inputEmailTpl) inputEmailTpl.value = EMAILJS_TEMPLATE_ID;
+    if (inputEmailPub) inputEmailPub.value = EMAILJS_PUBLIC_KEY;
+
     if (sTime) { dailySendTime = sTime.value; inputSendTime.value = dailySendTime; }
     if (sEmail) { managerEmail = sEmail.value; inputManagerEmail.value = managerEmail; }
     if (sCC) {
@@ -108,13 +129,27 @@ async function loadSettings() {
 
 async function updateSettings() {
   const newKey = inputDbKey.value.trim();
+  const inputUrlEl = document.getElementById('input-db-url');
+  const newUrl = inputUrlEl ? inputUrlEl.value.trim() : SUPABASE_URL;
+  
+  const inputEmailSvcEl = document.getElementById('input-emailjs-svc');
+  const newEmailSvc = inputEmailSvcEl ? inputEmailSvcEl.value.trim() : EMAILJS_SERVICE_ID;
+  const inputEmailTplEl = document.getElementById('input-emailjs-tpl');
+  const newEmailTpl = inputEmailTplEl ? inputEmailTplEl.value.trim() : EMAILJS_TEMPLATE_ID;
+  const inputEmailPubEl = document.getElementById('input-emailjs-pub');
+  const newEmailPub = inputEmailPubEl ? inputEmailPubEl.value.trim() : EMAILJS_PUBLIC_KEY;
+
   const newTime = inputSendTime.value;
   const newEmail = inputManagerEmail.value.trim();
   const newCC = ccEmailsArray.join(',');
 
-  if (newKey !== SUPABASE_ANON_KEY) {
+  if (newKey !== SUPABASE_ANON_KEY || newUrl !== SUPABASE_URL || newEmailSvc !== EMAILJS_SERVICE_ID || newEmailTpl !== EMAILJS_TEMPLATE_ID || newEmailPub !== EMAILJS_PUBLIC_KEY) {
     localStorage.setItem('supabase_anon_key', newKey);
-    showToast('API Key updated. Refreshing...', 'success');
+    localStorage.setItem('supabase_project_url', newUrl);
+    localStorage.setItem('emailjs_service_id', newEmailSvc);
+    localStorage.setItem('emailjs_template_id', newEmailTpl);
+    localStorage.setItem('emailjs_public_key', newEmailPub);
+    showToast('Credentials updated. Refreshing...', 'success');
     setTimeout(() => window.location.reload(), 1000);
     return;
   }
@@ -344,6 +379,9 @@ async function sendEmailToManager(isScheduled = false) {
 
   try {
     if (!managerEmail) throw new Error('Manager email not set');
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
+      throw new Error('EmailJS keys missing! Please configure them in Settings.');
+    }
 
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const emailSubject = `GM Procurement Approval Request - ${todayStr}`;

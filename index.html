@@ -224,12 +224,30 @@
         </div>
         <div class="modal-body">
           <div class="input-group" style="margin-bottom: 1rem;">
-            <label>Team Database Key (Stored Locally)</label>
+            <label>Supabase Project URL</label>
+            <input type="text" id="input-db-url" placeholder="https://your-project.supabase.co">
+          </div>
+          <div class="input-group" style="margin-bottom: 1rem;">
+            <label>Team Database Key (anon public)</label>
             <input type="password" id="input-db-key" placeholder="Paste 'anon' 'public' key here">
           </div>
           <div class="input-group">
             <label>Daily Auto-Send Time (24h)</label>
             <input type="time" id="input-send-time">
+          </div>
+          <hr style="opacity: 0.1; margin: 1.5rem 0 1rem;">
+          <h4 style="margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase;">EmailJS Configuration</h4>
+          <div class="input-group" style="margin-bottom: 1rem;">
+            <label>Service ID</label>
+            <input type="text" id="input-emailjs-svc" placeholder="e.g. service_xxxxxx">
+          </div>
+          <div class="input-group" style="margin-bottom: 1rem;">
+            <label>Template ID</label>
+            <input type="text" id="input-emailjs-tpl" placeholder="e.g. template_xxxxxx">
+          </div>
+          <div class="input-group" style="margin-bottom: 1rem;">
+            <label>Public Key</label>
+            <input type="password" id="input-emailjs-pub" placeholder="e.g. iOabUF7I4...">
           </div>
           <div class="modal-actions">
             <button id="btn-finalize" class="btn btn-primary full-width">
@@ -259,6 +277,11 @@
           </div>
           <h2>Team Setup Required</h2>
           <p style="opacity: 0.8; margin-top: 10px;">Please enter your Team's <b>Database Connection Key</b> to activate this dashboard.</p>
+        </div>
+        
+        <div class="input-group" style="text-align: left; margin-bottom: 15px;">
+          <label>Project URL</label>
+          <input type="text" id="setup-db-url" placeholder="https://your-project.supabase.co" style="width: 100%;">
         </div>
         
         <div class="input-group" style="text-align: left;">
