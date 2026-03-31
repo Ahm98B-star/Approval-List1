@@ -473,6 +473,8 @@ async function sendEmailToManager(isScheduled = false) {
       po_table: poH,
       adv_table: advH,
       summary_count: pending.length,
+      po_count: pos.length,
+      adv_count: advs.length,
       total_po_sar: totalPoSum.toLocaleString(),
       total_adv_sar: totalAdvSum.toLocaleString(),
       total_sar: grandTotal.toLocaleString()
