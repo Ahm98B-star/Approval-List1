@@ -106,7 +106,10 @@ async function updateSettings() {
 
 async function loadEntries() {
   const { data, error } = await supabaseClient.from('entries').select('*').order('created_at', { ascending: false });
-  if (error) return showToast('Load Failed', 'error');
+  if (error) {
+    console.error('Supabase Load Error:', error);
+    return showToast('Load Failed: ' + error.message, 'error');
+  }
   entries = data.map(i => ({
     id: i.id,
     date: i.po_date,
