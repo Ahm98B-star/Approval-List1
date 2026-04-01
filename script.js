@@ -288,8 +288,15 @@ function cancelEdit() {
 
 // RENDER
 function renderDashboard() {
-  const pos = entries.filter(i => (i.advanceAmount === 0 || !i.advanceAmount));
-  const advs = entries.filter(i => i.advanceAmount > 0);
+  const hideSent = document.getElementById('toggle-hide-sent') ? document.getElementById('toggle-hide-sent').checked : false;
+
+  let pos = entries.filter(i => (i.advanceAmount === 0 || !i.advanceAmount));
+  let advs = entries.filter(i => i.advanceAmount > 0);
+
+  if (hideSent) {
+    pos = pos.filter(i => !i.is_sent);
+    advs = advs.filter(i => !i.is_sent);
+  }
 
   const poCountEl = document.getElementById('po-count');
   if (poCountEl) poCountEl.textContent = pos.length;

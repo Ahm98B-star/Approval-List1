@@ -167,7 +167,13 @@
       <!-- Tables Section -->
       <section class="tables-area">
         <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.5rem;">
-          <h2 style="font-size: 1.25rem; font-weight: 600;">Active Pipeline</h2>
+          <div style="display: flex; align-items: center; gap: 15px;">
+            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Active Pipeline</h2>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-muted); cursor: pointer;">
+              <input type="checkbox" id="toggle-hide-sent" onchange="renderDashboard()" checked>
+              Hide Sent
+            </label>
+          </div>
           <div>
             <button id="btn-requeue-selected" class="btn btn-outline" style="display: none; margin-right: 8px; border-color: var(--primary); color: var(--primary);" onclick="requeueSelected()">
               <i data-lucide="rotate-ccw"></i> Re-Queue (<span id="requeue-count">0</span>)
