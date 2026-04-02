@@ -314,7 +314,7 @@ function renderDashboard() {
       <td>${e.woSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
-      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency}</td>
+      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</td>
       <td>${(e.amountSar || 0).toLocaleString()}</td>
       <td>${e.notes || '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
@@ -335,9 +335,10 @@ function renderDashboard() {
       <td>${e.woSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
-      <td>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency}</td>
+      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</td>
+      <td>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</td>
       <td>${(e.advanceAmount || 0).toLocaleString()}</td>
-      <td>${e.notes ? 'Yes' : '-'}</td>
+      <td>${e.notes || '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td>
         ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>` : ''}
@@ -522,8 +523,8 @@ async function sendEmailToManager(isScheduled = false) {
     if (pos.length) poH += "</table>";
 
     let advH = advsMapped.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
-      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (Cur)</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
-    advsMapped.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (Cur)</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (Cur)</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
+    advsMapped.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()} ${e.currency || ''}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
     if (advsMapped.length) advH += "</table>";
 
     const totalPoSum = pos.reduce((sum, i) => sum + (i.amountSar || 0), 0);
