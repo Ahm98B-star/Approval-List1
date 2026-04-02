@@ -77,12 +77,14 @@ body { background: var(--bg-dark); color: var(--text-main); min-height: 100vh; o
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .data-table th { text-align: left; padding: 1rem; color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--glass-border); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
 .data-table td { padding: 1rem; border-bottom: 1px solid #e2e8f0; }
-.data-table tr:hover { background: rgba(79, 70, 229, 0.03); }
+.data-table tbody tr { animation: fadeInRow 0.4s ease-out forwards; opacity: 0; transform: translateY(10px); }
+.data-table tbody tr:nth-child(n) { animation-delay: 0.05s; }
+.data-table tr:hover { background: rgba(79, 70, 229, 0.04); transform: scale(1.005); box-shadow: 0 2px 8px -2px rgba(0,0,0,0.05); }
 
 /* Buttons */
-.btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; white-space: nowrap; }
-.btn-primary { background: var(--primary); color: white; }
-.btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+.btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 500; cursor: pointer; border: none; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s, box-shadow 0.2s; white-space: nowrap; }
+.btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }
+.btn-primary:hover { background: var(--primary-hover); transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 10px -1px rgba(79, 70, 229, 0.3); }
 .btn-outline { background: transparent; border: 1px solid var(--glass-border); color: var(--text-main); }
 .btn-outline:hover { background: var(--glass-border); }
 .btn-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
@@ -90,9 +92,9 @@ body { background: var(--bg-dark); color: var(--text-main); min-height: 100vh; o
 .full-width { width: 100%; justify-content: center; }
 
 /* Modals */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: none; place-items: center; z-index: 1000; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: none; place-items: center; z-index: 1000; animation: fadeInOverlay 0.2s ease-out; }
 .modal-overlay.active { display: grid; }
-.modal { width: 90%; max-width: 450px; padding: 2rem; position: relative; }
+.modal { width: 90%; max-width: 450px; padding: 2rem; position: relative; animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
 .modal-actions { display: grid; gap: 1rem; margin-top: 1.5rem; }
 .btn-close { background: transparent; border: none; color: white; font-size: 1.5rem; cursor: pointer; }
@@ -107,6 +109,21 @@ body { background: var(--bg-dark); color: var(--text-main); min-height: 100vh; o
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* UI Animations */
+@keyframes fadeInRow {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modalFadeIn {
+  from { transform: translateY(-30px) scale(0.95); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 /* Badges */
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }

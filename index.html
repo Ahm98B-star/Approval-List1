@@ -125,7 +125,7 @@
           </div>
 
           <!-- Advance Payment Section -->
-          <div id="advance-fields" class="advance-section glass" style="display:none;">
+          <div id="advance-fields" class="advance-section glass" style="display:none; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
             <div class="input-group">
               <label for="advance-percent">Advance Percentage %</label>
               <select id="advance-percent">
@@ -141,6 +141,10 @@
             <div class="input-group" id="custom-percent-group" style="display:none;">
               <label for="custom-percent">Enter Custom %</label>
               <input type="number" id="custom-percent" placeholder="e.g. 15">
+            </div>
+            <div class="input-group">
+              <label for="advance-amount-cur">Advance Amount (Cur)</label>
+              <input type="text" id="advance-amount-cur" readonly class="readonly-input" placeholder="0.00">
             </div>
             <div class="input-group">
               <label for="advance-amount">Advance Amount (<span style="font-size: 1.25em; font-weight: bold;">⃁</span>)</label>
@@ -231,6 +235,7 @@
                   <th>WO/SO #</th>
                   <th>PO #</th>
                   <th>Supplier</th>
+                  <th>Adv (Cur)</th>
                   <th>Adv (<span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span>)</th>
                   <th>Notes</th>
                   <th>Status</th>

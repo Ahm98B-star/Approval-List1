@@ -334,6 +334,7 @@ function renderDashboard() {
       <td>${e.woSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
+      <td>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency}</td>
       <td>${(e.advanceAmount || 0).toLocaleString()}</td>
       <td>${e.notes ? 'Yes' : '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
@@ -459,9 +460,16 @@ function calculate() {
     advanceFields.style.display = 'grid';
     const p = (getVal('advance-percent') === 'custom') ? getNum('custom-percent') : getNum('advance-percent');
     advanceAmountInput.value = (sar * p / 100).toFixed(2);
+    
+    const advCurEl = document.getElementById('advance-amount-cur');
+    if (advCurEl) {
+      advCurEl.value = (amt * p / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' ' + currencySelect.value;
+    }
   } else {
     advanceFields.style.display = 'none';
     advanceAmountInput.value = 0;
+    const advCurEl = document.getElementById('advance-amount-cur');
+    if (advCurEl) advCurEl.value = '';
   }
 }
 
@@ -512,20 +520,20 @@ async function sendEmailToManager(isScheduled = false) {
     const emailSubject = `GM Procurement Approval Request - ${todayStr}`;
 
     const pos = pending.filter(i => i.advanceAmount === 0);
-    const advs = pending.filter(i => i.advanceAmount > 0);
+    const advsMapped = pending.filter(i => i.advanceAmount > 0);
 
     let poH = pos.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
       <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
     pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
     if (pos.length) poH += "</table>";
 
-    let advH = advs.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
-      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
-    if (advs.length) advH += "</table>";
+    let advH = advsMapped.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (Cur)</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
+    advsMapped.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
+    if (advsMapped.length) advH += "</table>";
 
     const totalPoSum = pos.reduce((sum, i) => sum + (i.amountSar || 0), 0);
-    const totalAdvSum = advs.reduce((sum, i) => sum + (i.advanceAmount || 0), 0);
+    const totalAdvSum = advsMapped.reduce((sum, i) => sum + (i.advanceAmount || 0), 0);
     const grandTotal = totalPoSum + totalAdvSum;
 
     // Send via EmailJS using the exact variable names expected in the template
