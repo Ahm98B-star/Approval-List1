@@ -75,7 +75,7 @@ async function init() {
     await loadEntries();
     subscribeToChanges();
     calculate();
-    setInterval(checkSchedule, 60000); // Check every minute
+    setInterval(checkSchedule, 30000); // Check every 30 seconds closely
   } catch (err) {
     showToast('Database connection failed. Please check your key in Settings.', 'error');
   }
@@ -541,7 +541,7 @@ async function sendEmailToManager(isScheduled = false) {
       adv_table: advH,
       summary_count: pending.length,
       po_count: pos.length,
-      adv_count: advs.length,
+      adv_count: advsMapped.length,
       total_po_sar: totalPoSum.toLocaleString(),
       total_adv_sar: totalAdvSum.toLocaleString(),
       total_sar: grandTotal.toLocaleString()
