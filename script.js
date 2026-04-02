@@ -472,10 +472,40 @@ async function sendEmailToManager(isScheduled = false) {
     return;
   }
 
+  // Prevent multiple tabs from firing at the exact same minute
+  if (isScheduled) {
+    const todayStr = new Date().toLocaleDateString();
+    const lastSentDate = localStorage.getItem('last_auto_send_date');
+    if (lastSentDate === todayStr) {
+      return; // Already sent today automatically
+    }
+    localStorage.setItem('last_auto_send_date', todayStr);
+  }
+
+  isSendingNow = true;
+
   try {
     if (!managerEmail) throw new Error('Manager email not set');
     if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
       throw new Error('EmailJS keys missing! Please configure them in Settings.');
+    }
+
+    // Concurrency Check: Mark as sent in DB first to prevent other users from sending the same records
+    const idsToUpdate = pending.map(i => i.id);
+    const { data: updatedRecords, error: updateError } = await supabaseClient
+      .from('entries')
+      .update({ is_sent: true })
+      .in('id', idsToUpdate)
+      .eq('is_sent', false)
+      .select();
+
+    if (updateError) throw updateError;
+
+    // If another device already sent them, updatedRecords will be empty
+    if (!updatedRecords || updatedRecords.length === 0) {
+      if (!isScheduled) showToast('Items were already sent by another device.', 'info');
+      isSendingNow = false;
+      return;
     }
 
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
@@ -484,20 +514,21 @@ async function sendEmailToManager(isScheduled = false) {
     const pos = pending.filter(i => i.advanceAmount === 0);
     const advs = pending.filter(i => i.advanceAmount > 0);
 
-    let poH = pos.length ? `<h3 style="color:#1e293b;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b>${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
+    let poH = pos.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">📅 PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
+    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
     if (pos.length) poH += "</table>";
 
-    let advH = advs.length ? `<h3 style="color:#1e293b;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:10px;background-color:#ffffff;">
-      <tr style="background-color:#f8fafc;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
-    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
+    let advH = advs.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
+    advs.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
     if (advs.length) advH += "</table>";
 
     const totalPoSum = pos.reduce((sum, i) => sum + (i.amountSar || 0), 0);
     const totalAdvSum = advs.reduce((sum, i) => sum + (i.advanceAmount || 0), 0);
     const grandTotal = totalPoSum + totalAdvSum;
 
+    // Send via EmailJS using the exact variable names expected in the template
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       subject_line: emailSubject,
       to_email: managerEmail,
@@ -512,15 +543,20 @@ async function sendEmailToManager(isScheduled = false) {
       total_sar: grandTotal.toLocaleString()
     }, EMAILJS_PUBLIC_KEY);
 
-    const { error } = await supabaseClient.from('entries').update({ is_sent: true }).in('id', pending.map(i => i.id));
-    if (error) throw error;
-
     showToast('Dispatch Successful: Email Sent & Records Updated', 'success');
   } catch (err) {
     console.error('Email error:', err);
-    // EmailJS often returns errors as custom objects with a .text property
+    
+    // Rollback if email failed to send
+    if (pending && pending.length > 0) {
+      await supabaseClient.from('entries').update({ is_sent: false }).in('id', pending.map(i => i.id));
+    }
+    
+    // EmailJS Custom error parsing
     const errMsg = err.text || err.message || (typeof err === 'string' ? err : 'Unknown Error');
     showToast('Dispatch Failed: ' + errMsg, 'error');
+  } finally {
+    isSendingNow = false;
   }
 }
 
