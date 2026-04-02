@@ -482,14 +482,15 @@ async function sendEmailToManager(isScheduled = false) {
     return;
   }
 
-  // Prevent multiple tabs from firing at the exact same minute
+  // Prevent multiple tabs from firing at the exact same minute during auto-send
   if (isScheduled) {
-    const todayStr = new Date().toLocaleDateString();
-    const lastSentDate = localStorage.getItem('last_auto_send_date');
-    if (lastSentDate === todayStr) {
-      return; // Already sent today automatically
+    const lockTime = localStorage.getItem('last_auto_send_lock');
+    const nowTime = new Date().getTime();
+    // If it dispatched within the last 2 minutes, ignore to prevent duplicate tab sends
+    if (lockTime && (nowTime - parseInt(lockTime) < 120000)) {
+      return; 
     }
-    localStorage.setItem('last_auto_send_date', todayStr);
+    localStorage.setItem('last_auto_send_lock', nowTime.toString());
   }
 
   isSendingNow = true;
