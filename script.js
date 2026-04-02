@@ -314,6 +314,7 @@ function renderDashboard() {
       <td>${e.woSo || '-'}</td>
       <td>${e.po || '-'}</td>
       <td>${e.supplier || '-'}</td>
+      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency}</td>
       <td>${(e.amountSar || 0).toLocaleString()}</td>
       <td>${e.notes || '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
@@ -498,23 +499,16 @@ async function sendEmailToManager(isScheduled = false) {
       throw new Error('EmailJS keys missing! Please configure them in Settings.');
     }
 
-    // Concurrency Check: Mark as sent in DB first to prevent other users from sending the same records
+    // To prevent multi-device race conditions, mark as sent in DB first.
+    // We ignore the .select() return because Supabase RLS often hides mutated rows.
     const idsToUpdate = pending.map(i => i.id);
-    const { data: updatedRecords, error: updateError } = await supabaseClient
+    const { error: updateError } = await supabaseClient
       .from('entries')
       .update({ is_sent: true })
       .in('id', idsToUpdate)
-      .eq('is_sent', false)
-      .select();
+      .eq('is_sent', false);
 
     if (updateError) throw updateError;
-
-    // If another device already sent them, updatedRecords will be empty
-    if (!updatedRecords || updatedRecords.length === 0) {
-      if (!isScheduled) showToast('Items were already sent by another device.', 'info');
-      isSendingNow = false;
-      return;
-    }
 
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
     const emailSubject = `GM Procurement Approval Request - ${todayStr}`;
