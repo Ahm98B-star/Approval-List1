@@ -577,46 +577,71 @@ function subscribeToChanges() {
   }).subscribe();
 }
 
-// EXPORT TO EXCEL
+// EXPORT TO EXCEL (Native XML Multi-Sheet - No External Libraries)
 function exportToExcel() {
   if (entries.length === 0) return showToast('No entries to export', 'info');
-  let csvContent = "data:text/csv;charset=utf-8,\ufeff";
-  csvContent += "Type,Date,Description,Category,PR/SO #,WO/SO #,PO #,Supplier,Amount,Currency,Amount (SAR),Advance %,Advance Amount,Notes,Status\n";
+
+  const pos = entries.filter(e => e.advanceAmount === 0 || !e.advanceAmount);
+  const advs = entries.filter(e => e.advanceAmount > 0);
+
+  const getXmlRow = (cells) => `<Row>${cells.map(c => `<Cell><Data ss:Type="${typeof c === 'number' ? 'Number' : 'String'}">${String(c).replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c]))}</Data></Cell>`).join('')}</Row>`;
+
+  const poHeaders = ["Date", "Description", "Category", "PR/SO #", "WO/SO #", "PO #", "Supplier", "Amount", "Currency", "Amount (SAR)", "Notes", "Status"];
+  const advHeaders = ["Date", "Description", "Category", "PR/SO #", "WO/SO #", "PO #", "Supplier", "Amount (Orig)", "Currency", "Adv %", "Adv (Cur)", "Adv (SAR)", "Notes", "Status"];
+
+  let xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">`;
   
-  entries.forEach(e => {
-    const type = e.advanceAmount > 0 ? "Advance Approval" : "PO Approval";
-    const desc = `"${(e.description || '').replace(/"/g, '""')}"`;
-    const pr = `"${(e.prSo || '').replace(/"/g, '""')}"`;
-    const wo = `"${(e.woSo || '').replace(/"/g, '""')}"`;
-    const po = `"${(e.po || '').replace(/"/g, '""')}"`;
-    const supp = `"${(e.supplier || '').replace(/"/g, '""')}"`;
-    const notes = `"${(e.notes || '').replace(/"/g, '""')}"`;
-    const status = e.is_sent ? "SENT" : "Pending";
-    
-    const row = [
-      type, e.date, desc, e.category, pr, wo, po,
-      supp, e.amount, e.currency, e.amountSar, e.advancePercent, e.advanceAmount,
-      notes, status
-    ];
-    csvContent += row.join(",") + "\n";
+  // Sheet 1: PO Approvals
+  xml += `<Worksheet ss:Name="PO Approvals"><Table>${getXmlRow(poHeaders)}`;
+  pos.forEach(e => {
+    xml += getXmlRow([e.date, e.description||'', e.category||'', e.prSo||'', e.woSo||'', e.po||'', e.supplier||'', e.amount, e.currency, e.amountSar, e.notes||'', e.is_sent?'SENT':'Pending']);
   });
-  
-  const encodedUri = encodeURI(csvContent);
+  xml += `</Table></Worksheet>`;
+
+  // Sheet 2: Advances
+  xml += `<Worksheet ss:Name="Advances"><Table>${getXmlRow(advHeaders)}`;
+  advs.forEach(e => {
+    xml += getXmlRow([e.date, e.description||'', e.category||'', e.prSo||'', e.woSo||'', e.po||'', e.supplier||'', e.amount, e.currency, e.advancePercent, (e.amount * e.advancePercent / 100), e.advanceAmount, e.notes||'', e.is_sent?'SENT':'Pending']);
+  });
+  xml += `</Table></Worksheet></Workbook>`;
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
+  link.setAttribute("href", url);
   const dateStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
-  link.setAttribute("download", `Approval_System_Export_${dateStr}.csv`);
+  link.setAttribute("download", `Approval_System_Export_${dateStr}.xls`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
-// SUPPLIER AUTO-COMPLETE
+// SUPPLIER AUTO-COMPLETE & MEMORY
 function updateSupplierList() {
   const datalist = document.getElementById('supplier-list');
   if (!datalist) return;
-  const uniqueSuppliers = [...new Set(entries.map(e => e.supplier).filter(Boolean))].sort();
+  const forgotten = JSON.parse(localStorage.getItem('forgotten_suppliers') || '[]');
+  const uniqueSuppliers = [...new Set(entries.map(e => e.supplier).filter(Boolean))]
+    .filter(s => !forgotten.includes(s))
+    .sort();
   datalist.innerHTML = uniqueSuppliers.map(s => `<option value="${s}">`).join('');
+}
+
+function removeSupplierFromMemory() {
+  const current = document.getElementById('supplier').value.trim();
+  if (!current) return showToast('Type a supplier name to remove it from memory', 'info');
+  
+  if (confirm(`Remove "${current}" from memory? It will no longer show up in suggestions.`)) {
+    const forgotten = JSON.parse(localStorage.getItem('forgotten_suppliers') || '[]');
+    if (!forgotten.includes(current)) {
+      forgotten.push(current);
+      localStorage.setItem('forgotten_suppliers', JSON.stringify(forgotten));
+    }
+    updateSupplierList();
+    showToast(`"${current}" removed from suggestions`, 'success');
+    document.getElementById('supplier').value = '';
+  }
 }
 
 // THEME LOGIC
@@ -662,6 +687,8 @@ document.getElementById('btn-theme-toggle').addEventListener('click', toggleThem
 btnActivateSetup.addEventListener('click', activateDashboard);
 const exportBtn = document.getElementById('btn-export');
 if (exportBtn) exportBtn.addEventListener('click', exportToExcel);
+const removeSupplierBtn = document.getElementById('btn-remove-supplier');
+if (removeSupplierBtn) removeSupplierBtn.addEventListener('click', removeSupplierFromMemory);
 
 // START
 init();
