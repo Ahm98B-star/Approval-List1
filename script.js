@@ -199,6 +199,7 @@ async function loadEntries() {
     is_sent: i.is_sent
   }));
   renderDashboard();
+  updateSupplierList();
 }
 
 async function createEntry(e) {
@@ -576,6 +577,48 @@ function subscribeToChanges() {
   }).subscribe();
 }
 
+// EXPORT TO EXCEL
+function exportToExcel() {
+  if (entries.length === 0) return showToast('No entries to export', 'info');
+  let csvContent = "data:text/csv;charset=utf-8,\ufeff";
+  csvContent += "Type,Date,Description,Category,PR/SO #,WO/SO #,PO #,Supplier,Amount,Currency,Amount (SAR),Advance %,Advance Amount,Notes,Status\n";
+  
+  entries.forEach(e => {
+    const type = e.advanceAmount > 0 ? "Advance Approval" : "PO Approval";
+    const desc = `"${(e.description || '').replace(/"/g, '""')}"`;
+    const pr = `"${(e.prSo || '').replace(/"/g, '""')}"`;
+    const wo = `"${(e.woSo || '').replace(/"/g, '""')}"`;
+    const po = `"${(e.po || '').replace(/"/g, '""')}"`;
+    const supp = `"${(e.supplier || '').replace(/"/g, '""')}"`;
+    const notes = `"${(e.notes || '').replace(/"/g, '""')}"`;
+    const status = e.is_sent ? "SENT" : "Pending";
+    
+    const row = [
+      type, e.date, desc, e.category, pr, wo, po,
+      supp, e.amount, e.currency, e.amountSar, e.advancePercent, e.advanceAmount,
+      notes, status
+    ];
+    csvContent += row.join(",") + "\n";
+  });
+  
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  const dateStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
+  link.setAttribute("download", `Approval_System_Export_${dateStr}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// SUPPLIER AUTO-COMPLETE
+function updateSupplierList() {
+  const datalist = document.getElementById('supplier-list');
+  if (!datalist) return;
+  const uniqueSuppliers = [...new Set(entries.map(e => e.supplier).filter(Boolean))].sort();
+  datalist.innerHTML = uniqueSuppliers.map(s => `<option value="${s}">`).join('');
+}
+
 // THEME LOGIC
 function initTheme() {
   const saved = localStorage.getItem('theme_preference') || 'dark';
@@ -617,6 +660,8 @@ btnCancelEdit.addEventListener('click', cancelEdit);
 inputManagerEmail.addEventListener('change', updateSettings);
 document.getElementById('btn-theme-toggle').addEventListener('click', toggleTheme);
 btnActivateSetup.addEventListener('click', activateDashboard);
+const exportBtn = document.getElementById('btn-export');
+if (exportBtn) exportBtn.addEventListener('click', exportToExcel);
 
 // START
 init();
