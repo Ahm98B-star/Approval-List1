@@ -6,6 +6,7 @@
   <title>Elite Approval System | GM Procurement</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -96,7 +97,10 @@
               </select>
             </div>
             <div class="input-group">
-              <label for="supplier">Supplier</label>
+              <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:0.5rem;">
+                <label for="supplier" style="margin-bottom:0;">Supplier</label>
+                <div id="btn-remove-supplier" style="font-size:0.75rem; color: #ef4444; cursor:pointer; display:flex; align-items:center; gap:4px;" title="Remove typed supplier from memory"><i data-lucide="trash-2" style="width:12px; height:12px;"></i> Remove from memory</div>
+              </div>
               <input type="text" id="supplier" list="supplier-list" placeholder="Enter supplier name" required>
               <datalist id="supplier-list"></datalist>
             </div>
