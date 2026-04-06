@@ -41,13 +41,10 @@
             <button onclick="addCcFromInput()" class="btn-add-tag"><i data-lucide="plus"></i></button>
           </div>
         </div>
-        <div class="dispatch-item" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end;">
-          <span id="daily-schedule-text" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; font-weight: 600;">
+        <div class="dispatch-item" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; padding-bottom: 5px;">
+          <span id="daily-schedule-text" style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">
             Auto-Dispatch: Pending...
           </span>
-          <button id="btn-export" class="btn btn-outline" style="height: 42px;">
-            <i data-lucide="file-spreadsheet"></i> Export Excel
-          </button>
         </div>
       </section>
 
@@ -289,7 +286,10 @@
             <input type="password" id="input-emailjs-pub" placeholder="e.g. iOabUF7I4...">
           </div>
           <div class="modal-actions">
-            <button id="btn-finalize" class="btn btn-primary full-width">
+            <button id="btn-export" class="btn btn-outline full-width" style="margin-bottom: 8px;">
+              <i data-lucide="file-spreadsheet"></i> Export to Excel (.xls)
+            </button>
+            <button id="btn-finalize" class="btn btn-primary full-width" style="margin-bottom: 8px;">
               <i data-lucide="send"></i> Dispatch Final Summary Now
             </button>
             <button id="btn-save-settings" class="btn btn-secondary full-width">Save Settings</button>
