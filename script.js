@@ -44,6 +44,19 @@ const btnCancelEdit = document.getElementById('btn-cancel-edit');
 const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 const getNum = (id) => parseFloat(getVal(id)) || 0;
 
+function extractSupplier(supplierStr) {
+  let vendorName = (supplierStr || "").trim();
+  if (!vendorName || vendorName === "-") return { suppNo: "", vendorName: "-" };
+  
+  let m = vendorName.match(/^(\d{3,15})(?:\s*[-_@:\|]+\s*|\s+)(.*)$/);
+  if (m) return { suppNo: m[1], vendorName: m[2].trim() };
+  
+  m = vendorName.match(/^(.*?)(?:\s*[-_@:\|]+\s*|\s+)(\d{3,15})$/);
+  if (m) return { suppNo: m[2], vendorName: m[1].trim() };
+  
+  return { suppNo: "", vendorName };
+}
+
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toast-container');
   const t = document.createElement('div');
@@ -306,9 +319,7 @@ function renderDashboard() {
   if (advCountEl) advCountEl.textContent = advs.length;
 
   if (poTbody) poTbody.innerHTML = pos.map(e => {
-    let suppNo = "", vendorName = e.supplier || "-";
-    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    const { suppNo, vendorName } = extractSupplier(e.supplier);
     return `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
@@ -331,9 +342,7 @@ function renderDashboard() {
   `}).join('');
 
   if (advanceTbody) advanceTbody.innerHTML = advs.map(e => {
-    let suppNo = "", vendorName = e.supplier || "-";
-    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    const { suppNo, vendorName } = extractSupplier(e.supplier);
     return `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
@@ -417,9 +426,7 @@ window.openWeeklyAdvancesModal = function() {
   }
 
   tbody.innerHTML = weeklyAdvs.map(e => {
-    let suppNo = "", vendorName = e.supplier || "-";
-    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    const { suppNo, vendorName } = extractSupplier(e.supplier);
     const advCur = ((e.amount || 0) * (e.advancePercent || 0)) / 100;
     return `
       <tr>
@@ -458,10 +465,7 @@ window.copyWeeklyAdvances = function() {
   let text = "";
   
   selectedAdvs.forEach(e => {
-    let suppNo = "";
-    let vendorName = e.supplier || "";
-    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    const { suppNo, vendorName } = extractSupplier(e.supplier);
     
     const poNum = e.po || "";
     const poAmount = e.amount || 0;
@@ -492,14 +496,7 @@ window.copyAdvances = function() {
   let text = "Supplier No.\tVendor Name\tPO number\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
   
   selectedAdvs.forEach(e => {
-    let suppNo = "";
-    let vendorName = e.supplier || "";
-    
-    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-    if (match) {
-      suppNo = match[1];
-      vendorName = match[2];
-    }
+    const { suppNo, vendorName } = extractSupplier(e.supplier);
     
     const poNum = e.po || "";
     const poAmount = e.amount || 0;
@@ -669,9 +666,7 @@ async function sendEmailToManager(isScheduled = false) {
     let poH = pos.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">📅 SAP PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
       <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>PO amount</th><th>PO Currency</th><th>Amount (SAR)</th><th>Remarks</th></tr>` : "";
     pos.forEach(e => {
-      let suppNo = "", vendorName = e.supplier || "-";
-      const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-      if (match) { suppNo = match[1]; vendorName = match[2]; }
+      const { suppNo, vendorName } = extractSupplier(e.supplier);
       poH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
     });
     if (pos.length) poH += "</table>";
@@ -679,9 +674,7 @@ async function sendEmailToManager(isScheduled = false) {
     let advH = advsMapped.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 SAP PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
       <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>PO amount</th><th>PO Currency</th><th>Advance amount in PO Currency</th><th>Advance amount in SAR</th><th>Remarks</th></tr>` : "";
     advsMapped.forEach(e => {
-      let suppNo = "", vendorName = e.supplier || "-";
-      const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
-      if (match) { suppNo = match[1]; vendorName = match[2]; }
+      const { suppNo, vendorName } = extractSupplier(e.supplier);
       const advCur = (((e.amount || 0) * (e.advancePercent || 0)) / 100);
       advH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b>${advCur.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
     });
