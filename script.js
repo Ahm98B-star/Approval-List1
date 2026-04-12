@@ -434,6 +434,7 @@ window.openWeeklyAdvancesModal = function() {
         <td>${suppNo || '-'}</td>
         <td>${vendorName}</td>
         <td>${e.po || '-'}</td>
+        <td title="${e.description || ''}">${e.description || '-'}</td>
         <td>${e.amount || 0}</td>
         <td>${e.currency || ''}</td>
         <td>${advCur}</td>
@@ -468,6 +469,7 @@ window.copyWeeklyAdvances = function() {
     const { suppNo, vendorName } = extractSupplier(e.supplier);
     
     const poNum = e.po || "";
+    const description = e.description || "";
     const poAmount = e.amount || 0;
     const poCurr = e.currency || "";
     const advCur = ((e.amount || 0) * (e.advancePercent || 0)) / 100;
@@ -476,7 +478,7 @@ window.copyWeeklyAdvances = function() {
     
     const safeStr = (str) => String(str).replace(/\t/g, " ").replace(/\n/g, " ");
     
-    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
+    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${safeStr(description)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
   });
   
   navigator.clipboard.writeText(text).then(() => {
@@ -493,12 +495,13 @@ window.copyAdvances = function() {
   const ids = Array.from(checkedAdv).map(cb => cb.value);
   const selectedAdvs = entries.filter(e => ids.includes(e.id));
   
-  let text = "Supplier No.\tVendor Name\tPO number\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
+  let text = "Supplier No.\tVendor Name\tPO number\tDescription\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
   
   selectedAdvs.forEach(e => {
     const { suppNo, vendorName } = extractSupplier(e.supplier);
     
     const poNum = e.po || "";
+    const description = e.description || "";
     const poAmount = e.amount || 0;
     const poCurr = e.currency || "";
     const advCur = ((e.amount || 0) * (e.advancePercent || 0)) / 100;
@@ -507,7 +510,7 @@ window.copyAdvances = function() {
     
     const safeStr = (str) => String(str).replace(/\t/g, " ").replace(/\n/g, " ");
     
-    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
+    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${safeStr(description)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
   });
   
   navigator.clipboard.writeText(text).then(() => {
@@ -664,19 +667,19 @@ async function sendEmailToManager(isScheduled = false) {
     const advsMapped = pending.filter(i => i.advanceAmount > 0);
 
     let poH = pos.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">📅 SAP PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
-      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>PO amount</th><th>PO Currency</th><th>Amount (SAR)</th><th>Remarks</th></tr>` : "";
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>Description</th><th>PO amount</th><th>PO Currency</th><th>Amount (SAR)</th><th>Remarks</th></tr>` : "";
     pos.forEach(e => {
       const { suppNo, vendorName } = extractSupplier(e.supplier);
-      poH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
+      poH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${e.description ? e.description : '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
     });
     if (pos.length) poH += "</table>";
 
     let advH = advsMapped.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 SAP PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
-      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>PO amount</th><th>PO Currency</th><th>Advance amount in PO Currency</th><th>Advance amount in SAR</th><th>Remarks</th></tr>` : "";
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>Description</th><th>PO amount</th><th>PO Currency</th><th>Advance amount in PO Currency</th><th>Advance amount in SAR</th><th>Remarks</th></tr>` : "";
     advsMapped.forEach(e => {
       const { suppNo, vendorName } = extractSupplier(e.supplier);
       const advCur = (((e.amount || 0) * (e.advancePercent || 0)) / 100);
-      advH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b>${advCur.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
+      advH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${e.description ? e.description : '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b>${advCur.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
     });
     if (advsMapped.length) advH += "</table>";
 
