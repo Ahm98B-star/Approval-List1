@@ -13,7 +13,6 @@ let dailySendTime = '09:00';
 let managerEmail = '';
 let ccEmailsArray = [];
 let isSendingNow = false;
-let showThisWeekAdvancesOnly = false;
 
 // SELECTORS
 const approvalForm = document.getElementById('approval-form');
@@ -300,21 +299,6 @@ function renderDashboard() {
     advs = advs.filter(i => !i.is_sent);
   }
 
-  if (showThisWeekAdvancesOnly) {
-    const now = new Date();
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-    startOfWeek.setHours(0,0,0,0);
-    now.setTime(new Date().getTime());
-    const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
-    endOfWeek.setHours(23,59,59,999);
-    
-    advs = advs.filter(i => {
-      if(!i.date) return false;
-      const d = new Date(i.date);
-      return d >= startOfWeek && d <= endOfWeek;
-    });
-  }
-
   const poCountEl = document.getElementById('po-count');
   if (poCountEl) poCountEl.textContent = pos.length;
   
@@ -410,20 +394,92 @@ window.updateDeleteSelectButton = function() {
   }
 };
 
-window.toggleThisWeekAdvances = function() {
-  showThisWeekAdvancesOnly = !showThisWeekAdvancesOnly;
-  const btn = document.getElementById('btn-this-week-advances');
-  if (btn) {
-    if (showThisWeekAdvancesOnly) {
-      btn.style.background = 'var(--primary)';
-      btn.style.color = 'white';
-    } else {
-      btn.style.background = 'transparent';
-      btn.style.color = 'var(--text)';
-      btn.style.borderColor = 'var(--border)';
-    }
+window.openWeeklyAdvancesModal = function() {
+  const modal = document.getElementById('weekly-advances-modal');
+  const tbody = document.getElementById('weekly-advances-tbody');
+  if (!modal || !tbody) return;
+
+  const now = new Date();
+  const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+  startOfWeek.setHours(0,0,0,0);
+  now.setTime(new Date().getTime());
+  const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+  endOfWeek.setHours(23,59,59,999);
+  
+  const weeklyAdvs = entries.filter(e => {
+    if (!e.date || e.advanceAmount === 0 || !e.advanceAmount) return false;
+    const d = new Date(e.date);
+    return d >= startOfWeek && d <= endOfWeek;
+  });
+
+  if (weeklyAdvs.length === 0) {
+    return showToast('No advances found for this week', 'info');
   }
-  renderDashboard();
+
+  tbody.innerHTML = weeklyAdvs.map(e => {
+    let suppNo = "", vendorName = e.supplier || "-";
+    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    const advCur = ((e.amount || 0) * (e.advancePercent || 0)) / 100;
+    return `
+      <tr>
+        <td><input type="checkbox" class="weekly-row-checkbox" value="${e.id}" checked></td>
+        <td>${suppNo || '-'}</td>
+        <td>${vendorName}</td>
+        <td>${e.po || '-'}</td>
+        <td>${e.amount || 0}</td>
+        <td>${e.currency || ''}</td>
+        <td>${advCur}</td>
+        <td>${e.advanceAmount || 0}</td>
+        <td>${e.notes || ''}</td>
+      </tr>
+    `;
+  }).join('');
+  
+  const selectAll = document.getElementById('selectAllWeekly');
+  if (selectAll) selectAll.checked = true;
+  
+  modal.classList.add('active');
+  if (window.lucide) lucide.createIcons();
+};
+
+window.toggleSelectAllWeekly = function() {
+  const isChecked = document.getElementById('selectAllWeekly').checked;
+  document.querySelectorAll('.weekly-row-checkbox').forEach(cb => cb.checked = isChecked);
+};
+
+window.copyWeeklyAdvances = function() {
+  const checkedBoxes = document.querySelectorAll('.weekly-row-checkbox:checked');
+  if (checkedBoxes.length === 0) return showToast('No rows selected to copy', 'info');
+  
+  const ids = Array.from(checkedBoxes).map(cb => cb.value);
+  const selectedAdvs = entries.filter(e => ids.includes(e.id));
+  
+  let text = "";
+  
+  selectedAdvs.forEach(e => {
+    let suppNo = "";
+    let vendorName = e.supplier || "";
+    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    
+    const poNum = e.po || "";
+    const poAmount = e.amount || 0;
+    const poCurr = e.currency || "";
+    const advCur = ((e.amount || 0) * (e.advancePercent || 0)) / 100;
+    const advSar = e.advanceAmount || 0;
+    const remarks = e.notes || "";
+    
+    const safeStr = (str) => String(str).replace(/\t/g, " ").replace(/\n/g, " ");
+    
+    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
+  });
+  
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`Copied ${selectedAdvs.length} advances to clipboard!`, 'success');
+  }).catch(err => {
+    showToast('Failed to copy. Please try again.', 'error');
+  });
 };
 
 window.copyAdvances = function() {
@@ -791,6 +847,8 @@ const exportBtn = document.getElementById('btn-export');
 if (exportBtn) exportBtn.addEventListener('click', exportToExcel);
 const removeSupplierBtn = document.getElementById('btn-remove-supplier');
 if (removeSupplierBtn) removeSupplierBtn.addEventListener('click', removeSupplierFromMemory);
+const btnCloseWeeklyAdvances = document.getElementById('btn-close-weekly-advances');
+if (btnCloseWeeklyAdvances) btnCloseWeeklyAdvances.addEventListener('click', () => document.getElementById('weekly-advances-modal').classList.remove('active'));
 
 // START
 init();

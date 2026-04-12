@@ -228,7 +228,7 @@
               <i data-lucide="landmark"></i>
               <h3>Advance Payment Tracking <span id="adv-count" class="badge" style="background:var(--primary);color:white;margin-left:8px;">0</span></h3>
             </div>
-            <button id="btn-this-week-advances" class="btn btn-outline" style="font-size: 0.8rem; padding: 4px 8px; display: flex; align-items: center; gap: 4px;" onclick="toggleThisWeekAdvances()">
+            <button id="btn-this-week-advances" class="btn btn-outline" style="font-size: 0.8rem; padding: 4px 8px; display: flex; align-items: center; gap: 4px;" onclick="openWeeklyAdvancesModal()">
               <i data-lucide="calendar" style="width: 14px; height: 14px;"></i> This Week
             </button>
           </div>
@@ -312,6 +312,44 @@
         <h2>Dispatch Successful!</h2>
         <p>Your approval summary has been sent to the Manager and CC list.</p>
         <button onclick="document.getElementById('success-modal').classList.remove('active')" class="btn btn-primary">Done</button>
+      </div>
+    </div>
+
+    <div id="weekly-advances-modal" class="modal-overlay">
+      <div class="modal glass" style="max-width: 900px;">
+        <div class="modal-header">
+          <h3><i data-lucide="calendar"></i> This Week's Advances</h3>
+          <button class="btn-close" id="btn-close-weekly-advances">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">
+            These advances were submitted this week. Select items below and click Copy to paste into your shared template.
+          </p>
+          <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 30px;"><input type="checkbox" id="selectAllWeekly" checked onchange="toggleSelectAllWeekly()"></th>
+                  <th>Supplier No.</th>
+                  <th>Vendor Name</th>
+                  <th>PO number</th>
+                  <th>PO amount</th>
+                  <th>PO Currency</th>
+                  <th>Adv (Cur)</th>
+                  <th>Adv (<span style="font-size: 1.25em; font-weight: bold; color: var(--primary);">⃁</span>)</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="weekly-advances-tbody">
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-actions" style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
+            <button id="btn-copy-weekly" class="btn btn-primary" onclick="copyWeeklyAdvances()">
+              <i data-lucide="clipboard-copy"></i> Copy Selected (No Headers)
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
