@@ -182,6 +182,9 @@
             <button id="btn-requeue-selected" class="btn btn-outline" style="display: none; margin-right: 8px; border-color: var(--primary); color: var(--primary);" onclick="requeueSelected()">
               <i data-lucide="rotate-ccw"></i> Re-Queue (<span id="requeue-count">0</span>)
             </button>
+            <button id="btn-copy-advances" class="btn btn-outline" style="display: none; margin-right: 8px; border-color: #10b981; color: #10b981;" onclick="copyAdvances()">
+              <i data-lucide="clipboard"></i> Copy (<span id="copy-count">0</span>)
+            </button>
             <button id="btn-delete-selected" class="btn btn-danger" style="display: none;" onclick="deleteSelected()">
               <i data-lucide="trash-2"></i> Delete Selected (<span id="selected-count">0</span>)
             </button>
@@ -199,16 +202,16 @@
               <thead>
                 <tr>
                   <th style="width: 30px;"><input type="checkbox" id="selectAllPo" onchange="toggleSelectAll('po')"></th>
+                  <th>Supplier No.</th>
+                  <th>Vendor Name</th>
+                  <th>PO number</th>
+                  <th>PO amount</th>
+                  <th>PO Currency</th>
+                  <th><span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span> Amount</th>
+                  <th>Remarks</th>
                   <th>Date</th>
                   <th>Description</th>
                   <th>Category</th>
-                  <th>PR/SO #</th>
-                  <th>WO/SO #</th>
-                  <th>PO #</th>
-                  <th>Supplier</th>
-                  <th>Original (Cur)</th>
-                  <th><span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span> Amount</th>
-                  <th>Notes</th>
                   <th>Status</th>
                   <th style="width: 80px;"></th>
                 </tr>
@@ -220,26 +223,31 @@
 
         <!-- Advance Approvals -->
         <div class="table-card glass">
-          <div class="card-header">
-            <i data-lucide="landmark"></i>
-            <h3>Advance Payment Tracking <span id="adv-count" class="badge" style="background:var(--primary);color:white;margin-left:8px;">0</span></h3>
+          <div class="card-header" style="justify-content: space-between;">
+            <div style="display: flex; align-items: center;">
+              <i data-lucide="landmark"></i>
+              <h3>Advance Payment Tracking <span id="adv-count" class="badge" style="background:var(--primary);color:white;margin-left:8px;">0</span></h3>
+            </div>
+            <button id="btn-this-week-advances" class="btn btn-outline" style="font-size: 0.8rem; padding: 4px 8px; display: flex; align-items: center; gap: 4px;" onclick="toggleThisWeekAdvances()">
+              <i data-lucide="calendar" style="width: 14px; height: 14px;"></i> This Week
+            </button>
           </div>
           <div class="table-responsive">
             <table class="data-table">
               <thead>
                 <tr>
                   <th style="width: 30px;"><input type="checkbox" id="selectAllAdv" onchange="toggleSelectAll('advance')"></th>
+                  <th>Supplier No.</th>
+                  <th>Vendor Name</th>
+                  <th>PO number</th>
+                  <th>PO amount</th>
+                  <th>PO Currency</th>
+                  <th>Adv (Cur)</th>
+                  <th>Adv (<span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span>)</th>
+                  <th>Remarks</th>
                   <th>Date</th>
                   <th>Description</th>
                   <th>Category</th>
-                  <th>PR/SO #</th>
-                  <th>WO/SO #</th>
-                  <th>PO #</th>
-                  <th>Supplier</th>
-                  <th>Original (Cur)</th>
-                  <th>Adv (Cur)</th>
-                  <th>Adv (<span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span>)</th>
-                  <th>Notes</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>

@@ -13,6 +13,7 @@ let dailySendTime = '09:00';
 let managerEmail = '';
 let ccEmailsArray = [];
 let isSendingNow = false;
+let showThisWeekAdvancesOnly = false;
 
 // SELECTORS
 const approvalForm = document.getElementById('approval-form');
@@ -299,54 +300,77 @@ function renderDashboard() {
     advs = advs.filter(i => !i.is_sent);
   }
 
+  if (showThisWeekAdvancesOnly) {
+    const now = new Date();
+    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+    startOfWeek.setHours(0,0,0,0);
+    now.setTime(new Date().getTime());
+    const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+    endOfWeek.setHours(23,59,59,999);
+    
+    advs = advs.filter(i => {
+      if(!i.date) return false;
+      const d = new Date(i.date);
+      return d >= startOfWeek && d <= endOfWeek;
+    });
+  }
+
   const poCountEl = document.getElementById('po-count');
   if (poCountEl) poCountEl.textContent = pos.length;
   
   const advCountEl = document.getElementById('adv-count');
   if (advCountEl) advCountEl.textContent = advs.length;
 
-  if (poTbody) poTbody.innerHTML = pos.map(e => `
+  if (poTbody) poTbody.innerHTML = pos.map(e => {
+    let suppNo = "", vendorName = e.supplier || "-";
+    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    return `
     <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
       <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
-      <td>${e.date}</td>
-      <td title="${e.description || ''}">${e.description || '-'}</td>
-      <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
-      <td>${e.prSo || '-'}</td>
-      <td>${e.woSo || '-'}</td>
+      <td>${suppNo || '-'}</td>
+      <td>${vendorName}</td>
       <td>${e.po || '-'}</td>
-      <td>${e.supplier || '-'}</td>
-      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</td>
+      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td>${e.currency || ''}</td>
       <td>${(e.amountSar || 0).toLocaleString()}</td>
       <td>${e.notes || '-'}</td>
-      <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
-      <td>
-        ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>` : ''}
-        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
-      </td>
-    </tr>
-  `).join('');
-
-  if (advanceTbody) advanceTbody.innerHTML = advs.map(e => `
-    <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
-      <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
       <td>${e.date}</td>
       <td title="${e.description || ''}">${e.description || '-'}</td>
       <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
-      <td>${e.prSo || '-'}</td>
-      <td>${e.woSo || '-'}</td>
-      <td>${e.po || '-'}</td>
-      <td>${e.supplier || '-'}</td>
-      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</td>
-      <td>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</td>
-      <td>${(e.advanceAmount || 0).toLocaleString()}</td>
-      <td>${e.notes || '-'}</td>
       <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
       <td>
         ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>` : ''}
         <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
       </td>
     </tr>
-  `).join('');
+  `}).join('');
+
+  if (advanceTbody) advanceTbody.innerHTML = advs.map(e => {
+    let suppNo = "", vendorName = e.supplier || "-";
+    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+    if (match) { suppNo = match[1]; vendorName = match[2]; }
+    return `
+    <tr style="${e.is_sent ? 'opacity:0.6;' : ''}">
+      <td><input type="checkbox" class="row-checkbox" value="${e.id}" onchange="updateDeleteSelectButton()"></td>
+      <td>${suppNo || '-'}</td>
+      <td>${vendorName}</td>
+      <td>${e.po || '-'}</td>
+      <td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td>${e.currency || ''}</td>
+      <td>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td>${(e.advanceAmount || 0).toLocaleString()}</td>
+      <td>${e.notes || '-'}</td>
+      <td>${e.date}</td>
+      <td title="${e.description || ''}">${e.description || '-'}</td>
+      <td><span class="badge" style="background:rgba(255,255,255,0.1);">${e.category || '-'}</span></td>
+      <td>● ${e.is_sent ? 'SENT' : 'Pending'}</td>
+      <td>
+        ${!e.is_sent ? `<button onclick="startEdit('${e.id}')" class="btn btn-outline" style="padding:4px; margin-right:4px;"><i data-lucide="edit-3" style="width:14px;"></i></button>` : ''}
+        <button onclick="deleteEntry('${e.id}')" class="btn btn-danger" style="padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+      </td>
+    </tr>
+  `}).join('');
 
   lucide.createIcons();
 }
@@ -360,10 +384,13 @@ window.toggleSelectAll = function(type) {
 
 window.updateDeleteSelectButton = function() {
   const checked = document.querySelectorAll('.row-checkbox:checked');
+  const checkedAdv = document.querySelectorAll('#advance-tbody .row-checkbox:checked');
   const btnDel = document.getElementById('btn-delete-selected');
   const countSpanDel = document.getElementById('selected-count');
   const btnReq = document.getElementById('btn-requeue-selected');
   const countSpanReq = document.getElementById('requeue-count');
+  const btnCopy = document.getElementById('btn-copy-advances');
+  const countSpanCopy = document.getElementById('copy-count');
 
   if (checked.length > 0) {
     if (countSpanDel) countSpanDel.textContent = checked.length;
@@ -374,6 +401,70 @@ window.updateDeleteSelectButton = function() {
     if (btnDel) btnDel.style.display = 'none';
     if (btnReq) btnReq.style.display = 'none';
   }
+  
+  if (checkedAdv.length > 0) {
+    if (countSpanCopy) countSpanCopy.textContent = checkedAdv.length;
+    if (btnCopy) btnCopy.style.display = 'inline-flex';
+  } else {
+    if (btnCopy) btnCopy.style.display = 'none';
+  }
+};
+
+window.toggleThisWeekAdvances = function() {
+  showThisWeekAdvancesOnly = !showThisWeekAdvancesOnly;
+  const btn = document.getElementById('btn-this-week-advances');
+  if (btn) {
+    if (showThisWeekAdvancesOnly) {
+      btn.style.background = 'var(--primary)';
+      btn.style.color = 'white';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--text)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  }
+  renderDashboard();
+};
+
+window.copyAdvances = function() {
+  const checkedAdv = document.querySelectorAll('#advance-tbody .row-checkbox:checked');
+  if (checkedAdv.length === 0) return showToast('No advances selected to copy', 'info');
+  
+  const ids = Array.from(checkedAdv).map(cb => cb.value);
+  const selectedAdvs = entries.filter(e => ids.includes(e.id));
+  
+  let text = "Supplier No.\tVendor Name\tPO number\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
+  
+  selectedAdvs.forEach(e => {
+    let suppNo = "";
+    let vendorName = e.supplier || "";
+    
+    const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+    if (match) {
+      suppNo = match[1];
+      vendorName = match[2];
+    }
+    
+    const poNum = e.po || "";
+    const poAmount = e.amount || 0;
+    const poCurr = e.currency || "";
+    const advCur = ((e.amount || 0) * (e.advancePercent || 0)) / 100;
+    const advSar = e.advanceAmount || 0;
+    const remarks = e.notes || "";
+    
+    const safeStr = (str) => String(str).replace(/\t/g, " ").replace(/\n/g, " ");
+    
+    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
+  });
+  
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`Copied ${selectedAdvs.length} rows to clipboard!`, 'success');
+    if(document.getElementById('selectAllAdv')) document.getElementById('selectAllAdv').checked = false;
+    document.querySelectorAll('#advance-tbody .row-checkbox:checked').forEach(cb => cb.checked = false);
+    updateDeleteSelectButton();
+  }).catch(err => {
+    showToast('Failed to copy to clipboard', 'error');
+  });
 };
 
 window.requeueSelected = async function() {
@@ -520,13 +611,24 @@ async function sendEmailToManager(isScheduled = false) {
     const advsMapped = pending.filter(i => i.advanceAmount > 0);
 
     let poH = pos.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">📅 SAP PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
-      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Original</th><th>Cur</th><th>Amount (SAR)</th><th>Notes</th></tr>` : "";
-    pos.forEach(e => poH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()}</td><td>${e.currency}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>PO amount</th><th>PO Currency</th><th>Amount (SAR)</th><th>Remarks</th></tr>` : "";
+    pos.forEach(e => {
+      let suppNo = "", vendorName = e.supplier || "-";
+      const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+      if (match) { suppNo = match[1]; vendorName = match[2]; }
+      poH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b style="color:#2563eb;">${(e.amountSar || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
+    });
     if (pos.length) poH += "</table>";
 
     let advH = advsMapped.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">💰 SAP PO advances require Approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
-      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Date</th><th>Description</th><th>Category</th><th>PR/SO #</th><th>WO/SO #</th><th>PO #</th><th>Supplier</th><th>Full (Cur)</th><th>Full (SAR)</th><th>Adv %</th><th>Adv (Cur)</th><th>Adv (SAR)</th><th>Notes</th></tr>` : "";
-    advsMapped.forEach(e => advH += `<tr><td>${e.date}</td><td>${e.description || '-'}</td><td>${e.category}</td><td>${e.prSo || '-'}</td><td>${e.woSo || '-'}</td><td>${e.po}</td><td>${e.supplier}</td><td>${(e.amount || 0).toLocaleString()} ${e.currency || ''}</td><td>${(e.amountSar || 0).toLocaleString()}</td><td>${e.advancePercent}%</td><td><b>${(((e.amount || 0) * (e.advancePercent || 0)) / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${e.currency || ''}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`);
+      <tr style="background-color:#f8fafc;color:#0f172a;"><th>Supplier No.</th><th>Vendor Name</th><th>PO number</th><th>PO amount</th><th>PO Currency</th><th>Advance amount in PO Currency</th><th>Advance amount in SAR</th><th>Remarks</th></tr>` : "";
+    advsMapped.forEach(e => {
+      let suppNo = "", vendorName = e.supplier || "-";
+      const match = vendorName.match(/^(\d+)\s*[-\s]\s*(.*)$/);
+      if (match) { suppNo = match[1]; vendorName = match[2]; }
+      const advCur = (((e.amount || 0) * (e.advancePercent || 0)) / 100);
+      advH += `<tr><td>${suppNo || '-'}</td><td>${vendorName}</td><td>${e.po || '-'}</td><td>${(e.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td>${e.currency || '-'}</td><td><b>${advCur.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</b></td><td><b style="color:#d97706;">${(e.advanceAmount || 0).toLocaleString()}</b></td><td>${e.notes ? e.notes : '-'}</td></tr>`;
+    });
     if (advsMapped.length) advH += "</table>";
 
     const totalPoSum = pos.reduce((sum, i) => sum + (i.amountSar || 0), 0);
