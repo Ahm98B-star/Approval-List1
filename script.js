@@ -478,7 +478,7 @@ window.copyWeeklyAdvances = function() {
     
     const safeStr = (str) => String(str).replace(/\t/g, " ").replace(/\n/g, " ");
     
-    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${safeStr(description)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
+    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
   });
   
   navigator.clipboard.writeText(text).then(() => {
@@ -495,7 +495,7 @@ window.copyAdvances = function() {
   const ids = Array.from(checkedAdv).map(cb => cb.value);
   const selectedAdvs = entries.filter(e => ids.includes(e.id));
   
-  let text = "Supplier No.\tVendor Name\tPO number\tDescription\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
+  let text = "Supplier No.\tVendor Name\tPO number\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
   
   selectedAdvs.forEach(e => {
     const { suppNo, vendorName } = extractSupplier(e.supplier);
@@ -510,7 +510,7 @@ window.copyAdvances = function() {
     
     const safeStr = (str) => String(str).replace(/\t/g, " ").replace(/\n/g, " ");
     
-    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${safeStr(description)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
+    text += `${safeStr(suppNo)}\t${safeStr(vendorName)}\t${safeStr(poNum)}\t${poAmount}\t${safeStr(poCurr)}\t${advCur}\t${advSar}\t${safeStr(remarks)}\n`;
   });
   
   navigator.clipboard.writeText(text).then(() => {
