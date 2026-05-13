@@ -59,7 +59,13 @@
         <form id="approval-form" class="entry-form">
           <div class="form-grid">
             <div class="input-group">
-              <label for="approval-type">Approval Type</label>
+              <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:0.5rem;">
+                <label for="approval-type" style="margin-bottom:0;">Approval Type</label>
+                <label for="has-advance" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; color: var(--primary); font-weight: 600; margin-bottom: 0; user-select: none;">
+                  <input type="checkbox" id="has-advance" style="width: 14px; height: 14px; accent-color: var(--primary); margin: 0;">
+                  Has Advance?
+                </label>
+              </div>
               <select id="approval-type" required>
                 <option value="PO Approval">PO Approval</option>
                 <option value="Advance Approval">Advance Approval</option>

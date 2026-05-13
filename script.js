@@ -24,6 +24,7 @@ const currencySelect = document.getElementById('currency');
 const amountSarInput = document.getElementById('amount-sar');
 const advanceFields = document.getElementById('advance-fields');
 const approvalTypeSelect = document.getElementById('approval-type');
+const hasAdvanceCheckbox = document.getElementById('has-advance');
 const advancePercentSelect = document.getElementById('advance-percent');
 const customPercentInput = document.getElementById('custom-percent');
 const customPercentGroup = document.getElementById('custom-percent-group');
@@ -242,11 +243,19 @@ async function createEntry(e) {
       btnCancelEdit.style.display = 'none';
       showToast('Entry Updated Successfully', 'success');
     } else {
-      const { error } = await supabaseClient.from('entries').insert([entryData]);
-      if (error) throw error;
+      if (approvalTypeSelect.value === 'PO Approval' && hasAdvanceCheckbox.checked) {
+        const poRecord = { ...entryData, advance_amount: 0, advance_percent: 0 };
+        const advRecord = { ...entryData };
+        const { error } = await supabaseClient.from('entries').insert([poRecord, advRecord]);
+        if (error) throw error;
+      } else {
+        const { error } = await supabaseClient.from('entries').insert([entryData]);
+        if (error) throw error;
+      }
       showToast('Entry Recorded Successfully', 'success');
     }
     approvalForm.reset();
+    if(hasAdvanceCheckbox) hasAdvanceCheckbox.checked = false;
     calculate();
   } catch (err) {
     console.error('Save error:', err);
@@ -271,6 +280,7 @@ function startEdit(id) {
   btnCancelEdit.style.display = 'inline-flex';
 
   document.getElementById('approval-type').value = (e.advanceAmount > 0) ? 'Advance Approval' : 'PO Approval';
+  if(hasAdvanceCheckbox) hasAdvanceCheckbox.checked = false;
   document.getElementById('pr-so-number').value = e.prSo || '';
   document.getElementById('po-number').value = e.po || '';
   document.getElementById('wo-so-number').value = e.woSo || '';
@@ -495,7 +505,7 @@ window.copyAdvances = function() {
   const ids = Array.from(checkedAdv).map(cb => cb.value);
   const selectedAdvs = entries.filter(e => ids.includes(e.id));
   
-  let text = "Supplier No.\tVendor Name\tPO number\tPO amount\tPO Currency\tAdvance amount in PO Currency\tAdvance amount in SAR\tRemarks\n";
+  let text = "";
   
   selectedAdvs.forEach(e => {
     const { suppNo, vendorName } = extractSupplier(e.supplier);
@@ -606,7 +616,7 @@ function calculate() {
   const sar = amt * (rates[currencySelect.value] || 1);
   amountSarInput.value = sar.toFixed(2);
 
-  if (approvalTypeSelect.value === 'Advance Approval') {
+  if (approvalTypeSelect.value === 'Advance Approval' || (approvalTypeSelect.value === 'PO Approval' && hasAdvanceCheckbox.checked)) {
     advanceFields.style.display = 'grid';
     const p = (getVal('advance-percent') === 'custom') ? getNum('custom-percent') : getNum('advance-percent');
     advanceAmountInput.value = (sar * p / 100).toFixed(2);
@@ -663,7 +673,7 @@ async function sendEmailToManager(isScheduled = false) {
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
     const emailSubject = `GM Procurement Approval Request - ${todayStr}`;
 
-    const pos = pending.filter(i => i.advanceAmount === 0);
+    const pos = pending.filter(i => i.advanceAmount === 0 || !i.advanceAmount);
     const advsMapped = pending.filter(i => i.advanceAmount > 0);
 
     let poH = pos.length ? `<h3 style="color:#1e293b; font-family:sans-serif;">📅 SAP PO require approval:</h3><table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;background-color:#ffffff;border-color:#e2e8f0;color:#334155;">
@@ -826,6 +836,7 @@ approvalForm.addEventListener('submit', createEntry);
 amountInput.addEventListener('input', calculate);
 currencySelect.addEventListener('change', calculate);
 approvalTypeSelect.addEventListener('change', calculate);
+hasAdvanceCheckbox.addEventListener('change', calculate);
 advancePercentSelect.addEventListener('change', () => {
   customPercentGroup.style.display = (advancePercentSelect.value === 'custom') ? 'block' : 'none';
   calculate();
