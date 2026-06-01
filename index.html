@@ -3,115 +3,189 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Elite Approval System | GM Procurement</title>
+  <title>GM Procurement · Approval System</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-container">
-    <header class="app-header glass">
-      <div class="logo-area">
-        <i data-lucide="shield-check" class="logo-icon"></i>
-        <h1>GM Procurement <span>Approval System</span></h1>
-      </div>
-      <div class="header-actions">
-        <button id="btn-theme-toggle" class="btn btn-outline btn-icon" title="Toggle Day/Dark Mode" style="margin-right: 8px;">
-          <i data-lucide="moon" id="theme-icon"></i>
-        </button>
-        <button id="btn-settings" class="btn btn-outline btn-icon" title="Settings">
-          <i data-lucide="settings"></i>
-        </button>
-      </div>
-    </header>
 
-    <main class="dashboard">
-      <!-- Dispatch Configuration Bar -->
-      <section class="dispatch-bar glass">
-        <div class="dispatch-item">
-          <label>Manager Recipient</label>
-          <input type="email" id="input-manager-email" placeholder="manager@example.com" class="glass">
+<div class="app" id="app">
+
+  <!-- ░░░ SIDEBAR ░░░ -->
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <div class="sidebar-brand">
+        <div class="brand-mark"><i data-lucide="shield-check"></i></div>
+        <div>
+          <div class="brand-name">GM Procurement</div>
+          <div class="brand-sub">Approval System</div>
         </div>
-        <div class="dispatch-item">
+      </div>
+
+      <div class="s-section">
+        <div class="s-label">Dispatch</div>
+        <div class="s-field">
+          <label>Manager Email</label>
+          <input type="email" id="input-manager-email" placeholder="manager@example.com">
+        </div>
+        <div class="s-field">
           <label>CC Recipients</label>
-          <div id="cc-tags-container" class="tag-input-wrapper glass">
-            <div id="cc-tags-list" class="tags-list"></div>
-            <input type="text" id="new-cc-input" placeholder="Add email...">
-            <button onclick="addCcFromInput()" class="btn-add-tag"><i data-lucide="plus"></i></button>
+          <div class="tag-input-wrapper" id="cc-tags-container">
+            <div class="tags-list" id="cc-tags-list"></div>
+            <input type="text" id="new-cc-input" placeholder="Add & press Enter…">
+            <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
           </div>
         </div>
-        <div class="dispatch-item" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; padding-bottom: 5px;">
-          <span id="daily-schedule-text" style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">
-            Auto-Dispatch: Pending...
+        <div class="s-field">
+          <span id="daily-schedule-text" class="schedule-badge">
+            <i data-lucide="clock"></i>&nbsp;Auto-Dispatch: Pending…
           </span>
         </div>
-      </section>
+      </div>
 
-      <!-- Input Section -->
-      <section class="entry-form-card glass">
-        <div class="card-header">
-          <i data-lucide="edit-3"></i>
-          <h3 id="form-title">Create New Approval Record</h3>
-          <span id="po-date-badge" class="badge">Date: <span id="po-date">...</span></span>
+      <div class="s-section s-stats">
+        <div class="s-label">Overview</div>
+        <div class="mini-stat"><div class="msi blue"><i data-lucide="file-text"></i></div><div class="msb"><span class="msv" id="stat-po-count">0</span><span class="msl">PO Approvals</span></div></div>
+        <div class="mini-stat"><div class="msi purple"><i data-lucide="landmark"></i></div><div class="msb"><span class="msv" id="stat-adv-count">0</span><span class="msl">Advances</span></div></div>
+        <div class="mini-stat"><div class="msi amber"><i data-lucide="clock"></i></div><div class="msb"><span class="msv" id="stat-pending-sar">0</span><span class="msl">Pending SAR ⃁</span></div></div>
+        <div class="mini-stat"><div class="msi green"><i data-lucide="send"></i></div><div class="msb"><span class="msv" id="stat-sent-week">0</span><span class="msl">Sent This Week</span></div></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="btn-theme-toggle" class="s-btn"><i data-lucide="moon" id="theme-icon"></i><span>Toggle Theme</span></button>
+        <button id="btn-settings"     class="s-btn"><i data-lucide="settings"></i><span>Settings</span></button>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ░░░ MAIN WRAP ░░░ -->
+  <div class="main-wrap">
+
+  <!-- ░░░ TOPBAR ░░░ -->
+  <header class="topbar">
+    <div class="tb-left">
+      <button class="ib" id="btn-sidebar-toggle" title="Toggle sidebar (⌘B)"><i data-lucide="panel-left"></i></button>
+      <span class="page-title">Active Pipeline</span>
+      <span id="po-date" class="tb-date"></span>
+    </div>
+
+    <div class="tb-mid">
+      <div class="search-box">
+        <i data-lucide="search" class="s-ico"></i>
+        <input type="text" id="pipeline-search" placeholder="Search PO, supplier, description…" oninput="renderDashboard()" autocomplete="off">
+        <div class="search-filters">
+          <button class="sf-pill on"  id="sf-po"  onclick="toggleSearchFilter('po')"  title="Search POs">PO</button>
+          <button class="sf-pill on"  id="sf-adv" onclick="toggleSearchFilter('adv')" title="Search Advances">Adv</button>
         </div>
-        
-        <form id="approval-form" class="entry-form">
-          <div class="form-grid">
-            <div class="input-group">
-              <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:0.5rem;">
-                <label for="approval-type" style="margin-bottom:0;">Approval Type</label>
-                <label for="has-advance" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; color: var(--primary); font-weight: 600; margin-bottom: 0; user-select: none;">
-                  <input type="checkbox" id="has-advance" style="width: 14px; height: 14px; accent-color: var(--primary); margin: 0;">
-                  Has Advance?
-                </label>
+      </div>
+    </div>
+
+    <div class="tb-right">
+      <label class="hide-toggle"><input type="checkbox" id="toggle-hide-sent" onchange="renderDashboard()" checked><span>Hide Sent</span></label>
+      <div class="tb-sep"></div>
+      <button id="btn-requeue-selected"  class="tb-action"       onclick="requeueSelected()"><i data-lucide="rotate-ccw"></i> Re-Queue <span id="requeue-count">0</span></button>
+      <button id="btn-copy-advances"     class="tb-action green" onclick="copyAdvances()"><i data-lucide="clipboard"></i> Copy <span id="copy-count">0</span></button>
+      <button id="btn-delete-selected"   class="tb-action red"   onclick="deleteSelected()"><i data-lucide="trash-2"></i> Delete <span id="selected-count">0</span></button>
+      <div class="tb-sep"></div>
+      <button class="ib" id="btn-form-toggle"  title="Toggle form panel"><i data-lucide="sidebar-close"></i></button>
+      <button class="ib" id="btn-maximize"     title="Full width tables (⌘⇧M)"><i data-lucide="maximize-2"></i></button>
+    </div>
+  </header>
+
+  <!-- ░░░ CONTENT ░░░ -->
+  <div class="content">
+
+    <!-- ── FORM PANEL ── -->
+    <section class="form-panel">
+      <div class="form-inner">
+
+        <div class="form-head">
+          <div class="fh-icon"><i data-lucide="plus-circle"></i></div>
+          <h2 id="form-title">New Record</h2>
+          <span class="date-chip">Date: <span id="po-date-form">…</span></span>
+        </div>
+
+        <!-- edit mode indicator -->
+        <div class="edit-indicator" id="edit-indicator">
+          <i data-lucide="edit-3"></i> Editing record — changes will update the database
+        </div>
+
+        <form id="approval-form">
+
+          <div class="fr">
+            <div class="fb">
+              <div class="flrow">
+                <span class="flbl">Type</span>
+                <label class="inline-chk" for="has-advance"><input type="checkbox" id="has-advance"> Advance?</label>
               </div>
               <select id="approval-type" required>
                 <option value="PO Approval">PO Approval</option>
                 <option value="Advance Approval">Advance Approval</option>
               </select>
             </div>
-            <div class="input-group">
-              <label for="pr-so-number">PR/SO Number</label>
-              <input type="text" id="pr-so-number" placeholder="Enter PR/SO #">
+            <div class="fb">
+              <label for="pr-so-number">PR / SO #</label>
+              <input type="text" id="pr-so-number" placeholder="PR/SO #">
             </div>
-            <div class="input-group">
-              <label for="po-number">PO Number</label>
-              <input type="text" id="po-number" placeholder="Enter PO #" required>
+          </div>
+
+          <div class="fr">
+            <div class="fb">
+              <label for="po-number">PO Number <span class="req">*</span></label>
+              <input type="text" id="po-number" placeholder="PO #" required>
             </div>
-            <div class="input-group">
-              <label for="wo-so-number">WO/SO Number</label>
-              <input type="text" id="wo-so-number" placeholder="Work Order / Sales Order #">
+            <div class="fb">
+              <label for="wo-so-number">WO / SO #</label>
+              <input type="text" id="wo-so-number" placeholder="WO/SO #">
             </div>
-            <div class="input-group">
-              <label for="description">Description (Summary)</label>
-              <input type="text" id="description" placeholder="Short summary of request">
+          </div>
+
+          <hr class="fdiv">
+
+          <div class="fr">
+            <div class="fb">
+              <label for="description">Description</label>
+              <input type="text" id="description" placeholder="Short summary…">
             </div>
-            <div class="input-group">
-              <label for="category">Category</label>
+            <div class="fb">
+              <label for="category">Category <span class="req">*</span></label>
               <select id="category" required>
-                <option value="">Select Category</option>
-                <option value="Stock">Stock</option>
-                <option value="Service">Service</option>
-                <option value="Material purchase">Material purchase</option>
-                <option value="Capex">Capex</option>
-                <option value="Indirect purchase">Indirect purchase</option>
+                <option value="">Select…</option>
+                <option>Stock</option>
+                <option>Service</option>
+                <option>Material purchase</option>
+                <option>Capex</option>
+                <option>Indirect purchase</option>
               </select>
             </div>
-            <div class="input-group">
-              <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:0.5rem;">
-                <label for="supplier" style="margin-bottom:0;">Supplier</label>
-                <div id="btn-remove-supplier" style="font-size:0.75rem; color: #ef4444; cursor:pointer; display:flex; align-items:center; gap:4px;" title="Remove typed supplier from memory"><i data-lucide="trash-2" style="width:12px; height:12px;"></i> Remove from memory</div>
+          </div>
+
+          <div class="fr one">
+            <div class="fb">
+              <div class="flrow">
+                <span class="flbl">Supplier <span class="req">*</span></span>
+                <button type="button" id="btn-remove-supplier" class="link-btn"><i data-lucide="trash-2"></i> Remove</button>
               </div>
-              <input type="text" id="supplier" list="supplier-list" placeholder="Enter supplier name" required>
-              <datalist id="supplier-list"></datalist>
+              <!-- reuse dropdown -->
+              <div class="reuse-wrap">
+                <input type="text" id="supplier" list="supplier-list" placeholder="Supplier name" required autocomplete="off" oninput="filterReuseMenu(this.value)">
+                <datalist id="supplier-list"></datalist>
+                <div class="reuse-menu" id="reuse-menu"></div>
+              </div>
             </div>
-            <div class="input-group">
-              <label for="amount">Amount (Currency)</label>
-              <div class="currency-group">
+          </div>
+
+          <div class="fr">
+            <div class="fb">
+              <label for="amount">Amount</label>
+              <div class="amt-row">
                 <input type="number" step="0.01" id="amount" placeholder="0.00" required>
-                <select id="currency">
-                  <option value="SAR" style="font-weight: bold;">⃁ SAR</option>
+                <select id="currency" class="cur-sel">
+                  <option value="SAR">⃁ SAR</option>
                   <option value="USD">USD</option>
                   <option value="EUR">EUR</option>
                   <option value="GBP">GBP</option>
@@ -124,274 +198,213 @@
                 </select>
               </div>
             </div>
-            <div class="input-group">
-              <label>Amount (<span style="font-size: 1.25em; font-weight: bold;">⃁</span> Equivalent)</label>
-              <input type="number" id="amount-sar" readonly class="readonly-input">
+            <div class="fb">
+              <label>SAR Equivalent ⃁</label>
+              <input type="number" id="amount-sar" readonly class="rf">
+              <div id="rate-hint" class="rate-hint"></div>
             </div>
           </div>
 
-          <!-- Advance Payment Section -->
-          <div id="advance-fields" class="advance-section glass" style="display:none; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-            <div class="input-group">
-              <label for="advance-percent">Advance Percentage %</label>
+          <div id="advance-fields" class="adv-panel" style="display:none">
+            <div class="fb">
+              <label for="advance-percent">Advance %</label>
               <select id="advance-percent">
                 <option value="0">Select %</option>
-                <option value="10">10%</option>
-                <option value="20">20%</option>
-                <option value="30">30%</option>
-                <option value="50">50%</option>
-                <option value="100">100%</option>
-                <option value="custom">Custom %</option>
+                <option value="10">10%</option><option value="20">20%</option>
+                <option value="30">30%</option><option value="50">50%</option>
+                <option value="100">100%</option><option value="custom">Custom…</option>
               </select>
             </div>
-            <div class="input-group" id="custom-percent-group" style="display:none;">
-              <label for="custom-percent">Enter Custom %</label>
+            <div class="fb" id="custom-percent-group" style="display:none">
+              <label for="custom-percent">Custom %</label>
               <input type="number" id="custom-percent" placeholder="e.g. 15">
             </div>
-            <div class="input-group">
-              <label for="advance-amount-cur">Advance Amount (Cur)</label>
-              <input type="text" id="advance-amount-cur" readonly class="readonly-input" placeholder="0.00">
+            <div class="fb">
+              <label for="advance-amount-cur">Advance (Cur)</label>
+              <input type="text" id="advance-amount-cur" readonly class="rf">
             </div>
-            <div class="input-group">
-              <label for="advance-amount">Advance Amount (<span style="font-size: 1.25em; font-weight: bold;">⃁</span>)</label>
-              <input type="number" id="advance-amount" readonly class="readonly-input">
+            <div class="fb">
+              <label for="advance-amount">Advance ⃁ SAR</label>
+              <input type="number" id="advance-amount" readonly class="rf">
             </div>
           </div>
 
-          <div class="input-group full-width">
-            <label for="notes">Final Comments / Notes</label>
-            <textarea id="notes" placeholder="Any additional context for the GM..."></textarea>
+          <div class="fr one">
+            <div class="fb">
+              <label for="notes">Notes</label>
+              <textarea id="notes" placeholder="Any context for the GM…"></textarea>
+            </div>
           </div>
 
           <div class="form-actions">
-            <button type="submit" id="btn-log-entry" class="btn btn-primary">
-              <i data-lucide="database"></i> Log Entry into Team Database
-            </button>
-            <button type="button" id="btn-cancel-edit" class="btn btn-outline" style="display:none;">
-              Cancel Edit
-            </button>
+            <button type="submit" id="btn-log-entry" class="btn btn-primary"><i data-lucide="database"></i> Log Entry</button>
+            <button type="button" id="btn-cancel-edit" class="btn btn-ghost" style="display:none">Cancel</button>
           </div>
+
         </form>
-      </section>
+      </div>
+    </section>
 
-      <!-- Tables Section -->
-      <section class="tables-area">
-        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.5rem;">
-          <div style="display: flex; align-items: center; gap: 15px;">
-            <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Active Pipeline</h2>
-            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-muted); cursor: pointer;">
-              <input type="checkbox" id="toggle-hide-sent" onchange="renderDashboard()" checked>
-              Hide Sent
-            </label>
-          </div>
-          <div>
-            <button id="btn-requeue-selected" class="btn btn-outline" style="display: none; margin-right: 8px; border-color: var(--primary); color: var(--primary);" onclick="requeueSelected()">
-              <i data-lucide="rotate-ccw"></i> Re-Queue (<span id="requeue-count">0</span>)
-            </button>
-            <button id="btn-copy-advances" class="btn btn-outline" style="display: none; margin-right: 8px; border-color: #10b981; color: #10b981;" onclick="copyAdvances()">
-              <i data-lucide="clipboard"></i> Copy (<span id="copy-count">0</span>)
-            </button>
-            <button id="btn-delete-selected" class="btn btn-danger" style="display: none;" onclick="deleteSelected()">
-              <i data-lucide="trash-2"></i> Delete Selected (<span id="selected-count">0</span>)
-            </button>
-          </div>
+    <!-- ── TABLES PANEL ── -->
+    <section class="tables-panel">
+
+      <!-- Filter bar -->
+      <div class="filter-row">
+        <span class="fc-label">Filter</span>
+        <button class="filter-chip active" id="fc-all"     onclick="setFilter('all')"><i data-lucide="layers"></i> All</button>
+        <button class="filter-chip"        id="fc-pending" onclick="setFilter('pending')"><i data-lucide="clock"></i> Pending</button>
+        <button class="filter-chip"        id="fc-sent"    onclick="setFilter('sent')"><i data-lucide="check-circle"></i> Sent</button>
+        <button class="filter-chip"        id="fc-today"   onclick="setFilter('today')"><i data-lucide="calendar"></i> Today</button>
+        <button class="filter-chip"        id="fc-week"    onclick="setFilter('week')"><i data-lucide="calendar-days"></i> This Week</button>
+        <div style="margin-left:auto;display:flex;gap:5px">
+          <label class="hide-toggle"><input type="checkbox" id="toggle-hide-sent" style="display:none" onchange="renderDashboard()" checked></label>
         </div>
+      </div>
 
-        <!-- PO Approvals -->
-        <div class="table-card glass" style="margin-top: 0;">
-          <div class="card-header">
+      <!-- PO Table -->
+      <div class="data-card">
+        <div class="dc-head">
+          <div class="dc-title">
             <i data-lucide="file-text"></i>
-            <h3>PO Approvals Tracking <span id="po-count" class="badge" style="background:var(--primary);color:white;margin-left:8px;">0</span></h3>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th style="width: 30px;"><input type="checkbox" id="selectAllPo" onchange="toggleSelectAll('po')"></th>
-                  <th>Supplier No.</th>
-                  <th>Vendor Name</th>
-                  <th>PO number</th>
-                  <th>PO amount</th>
-                  <th>PO Currency</th>
-                  <th><span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span> Amount</th>
-                  <th>Remarks</th>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Category</th>
-                  <th>Status</th>
-                  <th style="width: 80px;"></th>
-                </tr>
-              </thead>
-              <tbody id="po-tbody"></tbody>
-            </table>
+            PO Approvals
+            <span class="cpill" id="po-count">0</span>
           </div>
         </div>
-
-        <!-- Advance Approvals -->
-        <div class="table-card glass">
-          <div class="card-header" style="justify-content: space-between;">
-            <div style="display: flex; align-items: center;">
-              <i data-lucide="landmark"></i>
-              <h3>Advance Payment Tracking <span id="adv-count" class="badge" style="background:var(--primary);color:white;margin-left:8px;">0</span></h3>
-            </div>
-            <button id="btn-this-week-advances" class="btn btn-outline" style="font-size: 0.8rem; padding: 4px 8px; display: flex; align-items: center; gap: 4px;" onclick="openWeeklyAdvancesModal()">
-              <i data-lucide="calendar" style="width: 14px; height: 14px;"></i> This Week
-            </button>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th style="width: 30px;"><input type="checkbox" id="selectAllAdv" onchange="toggleSelectAll('advance')"></th>
-                  <th>Supplier No.</th>
-                  <th>Vendor Name</th>
-                  <th>PO number</th>
-                  <th>PO amount</th>
-                  <th>PO Currency</th>
-                  <th>Adv (Cur)</th>
-                  <th>Adv (<span style="font-size: 1.35em; font-weight: bold; color: var(--primary);">⃁</span>)</th>
-                  <th>Remarks</th>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Category</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="advance-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <!-- Modals -->
-    <div id="settings-modal" class="modal-overlay">
-      <div class="modal glass">
-        <div class="modal-header">
-          <h3><i data-lucide="settings"></i> Sync & Dispatch Settings</h3>
-          <button class="btn-close" id="btn-close-settings">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="input-group" style="margin-bottom: 1rem;">
-            <label>Supabase Project URL</label>
-            <input type="text" id="input-db-url" placeholder="https://your-project.supabase.co">
-          </div>
-          <div class="input-group" style="margin-bottom: 1rem;">
-            <label>Team Database Key (anon public)</label>
-            <input type="password" id="input-db-key" placeholder="Paste 'anon' 'public' key here">
-          </div>
-          <div class="input-group">
-            <label>Daily Auto-Send Time (24h)</label>
-            <input type="time" id="input-send-time">
-          </div>
-          <hr style="opacity: 0.1; margin: 1.5rem 0 1rem;">
-          <h4 style="margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase;">EmailJS Configuration</h4>
-          <div class="input-group" style="margin-bottom: 1rem;">
-            <label>Service ID</label>
-            <input type="text" id="input-emailjs-svc" placeholder="e.g. service_xxxxxx">
-          </div>
-          <div class="input-group" style="margin-bottom: 1rem;">
-            <label>Template ID</label>
-            <input type="text" id="input-emailjs-tpl" placeholder="e.g. template_xxxxxx">
-          </div>
-          <div class="input-group" style="margin-bottom: 1rem;">
-            <label>Public Key</label>
-            <input type="password" id="input-emailjs-pub" placeholder="e.g. iOabUF7I4...">
-          </div>
-          <div class="modal-actions">
-            <button id="btn-export" class="btn btn-outline full-width" style="margin-bottom: 8px;">
-              <i data-lucide="file-spreadsheet"></i> Export to Excel (.xls)
-            </button>
-            <button id="btn-finalize" class="btn btn-primary full-width" style="margin-bottom: 8px;">
-              <i data-lucide="send"></i> Dispatch Final Summary Now
-            </button>
-            <button id="btn-save-settings" class="btn btn-secondary full-width">Save Settings</button>
-          </div>
+        <div class="table-wrap">
+          <table class="data-table" id="po-table">
+            <thead><tr>
+              <th style="width:28px"><input type="checkbox" id="selectAllPo" onchange="toggleSelectAll('po')"></th>
+              <th onclick="sortTable('po','suppNo')">Supp.</th>
+              <th onclick="sortTable('po','supplier')">Vendor</th>
+              <th onclick="sortTable('po','po')">PO #</th>
+              <th onclick="sortTable('po','amount')">Amount</th>
+              <th>Cur</th>
+              <th onclick="sortTable('po','amountSar')">SAR ⃁</th>
+              <th>Notes</th>
+              <th onclick="sortTable('po','date')">Date</th>
+              <th>Description</th>
+              <th>Category</th>
+              <th onclick="sortTable('po','is_sent')">Status</th>
+              <th style="width:72px"></th>
+            </tr></thead>
+            <tbody id="po-tbody">
+              <tr class="empty-row"><td colspan="13">
+                <div class="empty-state"><i data-lucide="file-text" class="e-ico"></i><p>No PO entries yet</p><span>Fill the form and click Log Entry</span></div>
+              </td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
 
-    <div id="success-modal" class="modal-overlay">
-      <div class="modal glass success-modal">
-        <i data-lucide="check-circle" class="success-icon"></i>
-        <h2>Dispatch Successful!</h2>
-        <p>Your approval summary has been sent to the Manager and CC list.</p>
-        <button onclick="document.getElementById('success-modal').classList.remove('active')" class="btn btn-primary">Done</button>
-      </div>
-    </div>
-
-    <div id="weekly-advances-modal" class="modal-overlay">
-      <div class="modal glass" style="max-width: 900px;">
-        <div class="modal-header">
-          <h3><i data-lucide="calendar"></i> This Week's Advances</h3>
-          <button class="btn-close" id="btn-close-weekly-advances">&times;</button>
+      <!-- Advance Table -->
+      <div class="data-card">
+        <div class="dc-head">
+          <div class="dc-title">
+            <i data-lucide="landmark"></i>
+            Advance Payments
+            <span class="cpill" id="adv-count">0</span>
+          </div>
+          <button class="btn btn-ghost small" onclick="openWeeklyAdvancesModal()"><i data-lucide="calendar"></i> This Week</button>
         </div>
-        <div class="modal-body">
-          <p style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">
-            These advances were submitted this week. Select items below and click Copy to paste into your shared template.
-          </p>
-          <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th style="width: 30px;"><input type="checkbox" id="selectAllWeekly" checked onchange="toggleSelectAllWeekly()"></th>
-                  <th>Supplier No.</th>
-                  <th>Vendor Name</th>
-                  <th>PO number</th>
-                  <th>Description</th>
-                  <th>PO amount</th>
-                  <th>PO Currency</th>
-                  <th>Adv (Cur)</th>
-                  <th>Adv (<span style="font-size: 1.25em; font-weight: bold; color: var(--primary);">⃁</span>)</th>
-                  <th>Remarks</th>
-                </tr>
-              </thead>
-              <tbody id="weekly-advances-tbody">
-              </tbody>
-            </table>
-          </div>
-          <div class="modal-actions" style="margin-top: 1.5rem; display: flex; justify-content: flex-end;">
-            <button id="btn-copy-weekly" class="btn btn-primary" onclick="copyWeeklyAdvances()">
-              <i data-lucide="clipboard-copy"></i> Copy Selected (No Headers)
-            </button>
-          </div>
+        <div class="table-wrap">
+          <table class="data-table" id="adv-table">
+            <thead><tr>
+              <th style="width:28px"><input type="checkbox" id="selectAllAdv" onchange="toggleSelectAll('advance')"></th>
+              <th onclick="sortTable('adv','suppNo')">Supp.</th>
+              <th onclick="sortTable('adv','supplier')">Vendor</th>
+              <th onclick="sortTable('adv','po')">PO #</th>
+              <th onclick="sortTable('adv','amount')">PO Amt</th>
+              <th>Cur</th>
+              <th>Adv (Cur)</th>
+              <th onclick="sortTable('adv','advanceAmount')">Adv SAR ⃁</th>
+              <th>Notes</th>
+              <th onclick="sortTable('adv','date')">Date</th>
+              <th>Description</th>
+              <th>Category</th>
+              <th onclick="sortTable('adv','is_sent')">Status</th>
+              <th style="width:72px"></th>
+            </tr></thead>
+            <tbody id="advance-tbody">
+              <tr class="empty-row"><td colspan="14">
+                <div class="empty-state"><i data-lucide="landmark" class="e-ico"></i><p>No advance entries yet</p><span>Check "Advance?" when logging</span></div>
+              </td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
 
-    <!-- SETUP MODAL (First run) -->
-    <div id="setup-modal" class="modal-overlay">
-      <div class="modal glass" style="max-width: 450px; text-align: center;">
-        <div style="margin-bottom: 20px;">
-          <div style="width: 60px; height: 60px; background: #6366f1; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px;">
-            <i data-lucide="shield-check" style="width: 30px; height: 30px; color: white;"></i>
-          </div>
-          <h2>Team Setup Required</h2>
-          <p style="opacity: 0.8; margin-top: 10px;">Please enter your Team's <b>Database Connection Key</b> to activate this dashboard.</p>
-        </div>
-        
-        <div class="input-group" style="text-align: left; margin-bottom: 15px;">
-          <label>Project URL</label>
-          <input type="text" id="setup-db-url" placeholder="https://your-project.supabase.co" style="width: 100%;">
-        </div>
-        
-        <div class="input-group" style="text-align: left;">
-          <label>Database Key (anon public)</label>
-          <input type="password" id="setup-db-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..." style="width: 100%;">
-        </div>
-        
-        <div style="margin-top: 25px;">
-          <button id="btn-activate-setup" class="btn btn-primary full-width">Activate Dashboard</button>
-          <p style="font-size: 0.7rem; opacity: 0.5; margin-top: 10px; color: var(--text-muted, #64748b);">This key is stored securely in your private browser memory.</p>
-        </div>
+    </section>
+  </div><!-- content -->
+  </div><!-- main-wrap -->
+</div><!-- app -->
+
+
+<!-- ░░░ MODALS ░░░ -->
+<div id="settings-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-hd"><h3><i data-lucide="settings"></i> Settings</h3><button class="btn-x" id="btn-close-settings">&times;</button></div>
+    <div class="modal-body">
+      <div class="s-field"><label>Supabase Project URL</label><input type="text" id="input-db-url" placeholder="https://your-project.supabase.co"></div>
+      <div class="s-field"><label>Database Key (anon)</label><input type="password" id="input-db-key" placeholder="Paste anon key…"></div>
+      <div class="s-field"><label>Auto-Send Time (24h)</label><input type="time" id="input-send-time"></div>
+      <div class="sdiv">EmailJS</div>
+      <div class="s-field"><label>Service ID</label><input type="text" id="input-emailjs-svc" placeholder="service_xxxxx"></div>
+      <div class="s-field"><label>Template ID</label><input type="text" id="input-emailjs-tpl" placeholder="template_xxxxx"></div>
+      <div class="s-field"><label>Public Key</label><input type="password" id="input-emailjs-pub" placeholder="Public key…"></div>
+      <div class="modal-acts">
+        <button id="btn-export"         class="btn btn-ghost full-w"><i data-lucide="file-spreadsheet"></i> Export to Excel</button>
+        <button id="btn-finalize"        class="btn btn-primary full-w"><i data-lucide="send"></i> Dispatch Summary Now</button>
+        <button id="btn-save-settings"   class="btn btn-secondary full-w">Save Settings</button>
       </div>
     </div>
-
-    <!-- Toast Component -->
-    <div id="toast-container"></div>
   </div>
+</div>
 
-  <script src="script.js"></script>
+<div id="success-modal" class="modal-overlay">
+  <div class="modal success-modal">
+    <i data-lucide="check-circle" class="suc-ico"></i>
+    <h2>Dispatch Successful!</h2>
+    <p>Summary sent to Manager and CC list.</p>
+    <button onclick="document.getElementById('success-modal').classList.remove('active')" class="btn btn-primary full-w">Done</button>
+  </div>
+</div>
+
+<div id="weekly-advances-modal" class="modal-overlay">
+  <div class="modal wide-modal">
+    <div class="modal-hd"><h3><i data-lucide="calendar"></i> This Week's Advances</h3><button class="btn-x" id="btn-close-weekly-advances">&times;</button></div>
+    <div class="modal-body">
+      <p class="modal-hint">Select rows then copy — paste directly into your shared template.</p>
+      <div class="table-wrap" style="max-height:340px;overflow-y:auto">
+        <table class="data-table">
+          <thead><tr>
+            <th><input type="checkbox" id="selectAllWeekly" checked onchange="toggleSelectAllWeekly()"></th>
+            <th>Supp.</th><th>Vendor</th><th>PO #</th><th>Description</th>
+            <th>PO Amt</th><th>Cur</th><th>Adv (Cur)</th><th>Adv SAR ⃁</th><th>Notes</th>
+          </tr></thead>
+          <tbody id="weekly-advances-tbody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-primary" onclick="copyWeeklyAdvances()"><i data-lucide="clipboard-copy"></i> Copy Selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="setup-modal" class="modal-overlay">
+  <div class="modal setup-modal">
+    <div class="setup-icon"><i data-lucide="shield-check"></i></div>
+    <h2>Team Setup</h2>
+    <p>Enter your Supabase connection details to activate the dashboard.</p>
+    <div class="s-field" style="text-align:left"><label>Project URL</label><input type="text" id="setup-db-url" placeholder="https://your-project.supabase.co"></div>
+    <div class="s-field" style="text-align:left;margin-top:8px"><label>Anon Key</label><input type="password" id="setup-db-key" placeholder="eyJhbGci…"></div>
+    <button id="btn-activate-setup" class="btn btn-primary full-w" style="margin-top:14px">Activate Dashboard</button>
+    <p class="setup-note">Stored in your browser only — never sent anywhere.</p>
+  </div>
+</div>
+
+<button class="fab-restore" id="fab-restore"><i data-lucide="layout-dashboard"></i> Restore Layout</button>
+<div id="toasts"></div>
+<script src="script.js"></script>
 </body>
 </html>
