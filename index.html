@@ -3,407 +3,355 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GM Procurement · Approval System</title>
+  <title>GM Procurement · Approvals</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <div class="app" id="app">
 
-  <!-- ░░░ SIDEBAR ░░░ -->
+  <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-inner">
-
-      <div class="sidebar-brand">
-        <div class="brand-mark"><i data-lucide="shield-check"></i></div>
-        <div>
-          <div class="brand-name">GM Procurement</div>
-          <div class="brand-sub">Approval System</div>
-        </div>
+      <div class="brand">
+        <div class="brand-icon"><i data-lucide="shield-check"></i></div>
+        <div><div class="brand-name">GM Procurement</div><div class="brand-sub">Approval System</div></div>
       </div>
 
-      <div class="s-section">
-        <div class="s-label">Dispatch</div>
-        <div class="s-field">
-          <label>Manager Email</label>
-          <input type="email" id="input-manager-email" placeholder="manager@example.com">
-        </div>
-        <div class="s-field">
+      <div class="ss">
+        <div class="ssl">Dispatch</div>
+        <div class="sf"><label>Manager Email</label><input type="email" id="input-manager-email" placeholder="manager@example.com"></div>
+        <div class="sf">
           <label>CC Recipients</label>
-          <div class="tag-input-wrapper" id="cc-tags-container">
+          <div class="tag-wrap" id="cc-tags-container">
             <div class="tags-list" id="cc-tags-list"></div>
             <input type="text" id="new-cc-input" placeholder="Add & press Enter…">
             <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
           </div>
         </div>
-        <div class="s-field">
-          <span id="daily-schedule-text" class="schedule-badge">
-            <i data-lucide="clock"></i>&nbsp;Auto-Dispatch: Pending…
-          </span>
-        </div>
+        <div class="sf"><span id="daily-schedule-text" class="sched-badge"><i data-lucide="clock"></i>&nbsp;Auto-Dispatch: Pending…</span></div>
       </div>
 
-      <div class="s-section s-stats">
-        <div class="s-label">Overview</div>
-        <div class="mini-stat"><div class="msi blue"><i data-lucide="file-text"></i></div><div class="msb"><span class="msv" id="stat-po-count">0</span><span class="msl">PO Approvals</span></div></div>
-        <div class="mini-stat"><div class="msi purple"><i data-lucide="landmark"></i></div><div class="msb"><span class="msv" id="stat-adv-count">0</span><span class="msl">Advances</span></div></div>
-        <div class="mini-stat"><div class="msi amber"><i data-lucide="clock"></i></div><div class="msb"><span class="msv" id="stat-pending-sar">0</span><span class="msl">Pending SAR ⃁</span></div></div>
-        <div class="mini-stat"><div class="msi green"><i data-lucide="send"></i></div><div class="msb"><span class="msv" id="stat-sent-week">0</span><span class="msl">Sent This Week</span></div></div>
+      <div class="ss s-stats">
+        <div class="ssl">Overview</div>
+        <div class="mstat"><div class="msi blue"><i data-lucide="file-text"></i></div><div class="msb"><span class="msv" id="stat-po-count">0</span><span class="msl">PO Approvals</span></div></div>
+        <div class="mstat"><div class="msi purple"><i data-lucide="landmark"></i></div><div class="msb"><span class="msv" id="stat-adv-count">0</span><span class="msl">Advances</span></div></div>
+        <div class="mstat"><div class="msi amber"><i data-lucide="clock"></i></div><div class="msb"><span class="msv" id="stat-pending-sar">0</span><span class="msl">Pending SAR ⃁</span></div></div>
+        <div class="mstat"><div class="msi hold"><i data-lucide="pause-circle"></i></div><div class="msb"><span class="msv" id="stat-hold-count">0</span><span class="msl">On Hold</span></div></div>
+        <div class="mstat"><div class="msi green"><i data-lucide="send"></i></div><div class="msb"><span class="msv" id="stat-sent-week">0</span><span class="msl">Sent This Week</span></div></div>
       </div>
 
-      <div class="sidebar-footer">
+      <div class="s-footer">
         <button id="btn-theme-toggle" class="s-btn"><i data-lucide="moon" id="theme-icon"></i><span>Toggle Theme</span></button>
-        <button id="btn-settings"     class="s-btn"><i data-lucide="settings"></i><span>Settings</span></button>
+        <button id="btn-settings" class="s-btn"><i data-lucide="settings"></i><span>Settings</span></button>
       </div>
-
     </div>
   </aside>
 
-  <!-- ░░░ MAIN WRAP ░░░ -->
+  <!-- MAIN -->
   <div class="main-wrap">
 
-  <!-- ░░░ TOPBAR ░░░ -->
-  <header class="topbar">
-    <div class="tb-left">
-      <button class="ib" id="btn-sidebar-toggle" title="Toggle sidebar (⌘B)"><i data-lucide="panel-left"></i></button>
-      <span class="page-title">Active Pipeline</span>
-      <span id="po-date" class="tb-date"></span>
-    </div>
-
-    <div class="tb-mid">
-      <div class="search-box">
-        <i data-lucide="search" class="s-ico"></i>
-        <input type="text" id="pipeline-search" placeholder="Search PO, supplier, description…" oninput="renderDashboard()" autocomplete="off">
-        <div class="search-filters">
-          <button class="sf-pill on"  id="sf-po"  onclick="toggleSearchFilter('po')"  title="Search POs">PO</button>
-          <button class="sf-pill on"  id="sf-adv" onclick="toggleSearchFilter('adv')" title="Search Advances">Adv</button>
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="tb-l">
+        <button class="ib" id="btn-sb-toggle" title="Sidebar (⌘B)"><i data-lucide="panel-left"></i></button>
+        <span class="pg-title">Active Pipeline</span>
+        <span id="po-date" class="tb-date"></span>
+      </div>
+      <div class="tb-m">
+        <div class="search-box">
+          <i data-lucide="search" class="s-ico"></i>
+          <input type="text" id="pipeline-search" placeholder="Search PO, supplier, description…" oninput="renderDashboard()" autocomplete="off">
+          <div class="sf-pills">
+            <button class="sfp on" id="sf-po"  onclick="toggleSF('po')">PO</button>
+            <button class="sfp on" id="sf-adv" onclick="toggleSF('adv')">Adv</button>
+          </div>
         </div>
       </div>
-    </div>
+      <div class="tb-r">
+        <label class="hide-tog"><input type="checkbox" id="toggle-hide-sent" onchange="renderDashboard()" checked><span>Hide Sent</span></label>
+        <div class="tb-sep"></div>
+        <button id="btn-requeue-selected" class="tb-act"       onclick="requeueSelected()"><i data-lucide="rotate-ccw"></i> Re-Queue <span id="requeue-count">0</span></button>
+        <button id="btn-copy-advances"    class="tb-act green" onclick="copyAdvances()"><i data-lucide="clipboard"></i> Copy <span id="copy-count">0</span></button>
+        <button id="btn-delete-selected"  class="tb-act red"   onclick="deleteSelected()"><i data-lucide="trash-2"></i> Delete <span id="selected-count">0</span></button>
+        <div class="tb-sep"></div>
+        <button class="ib" id="btn-form-toggle" title="Toggle form"><i data-lucide="sidebar-close"></i></button>
+        <button class="ib" id="btn-maximize"    title="Maximize tables (⌘⇧M)"><i data-lucide="maximize-2"></i></button>
+      </div>
+    </header>
 
-    <div class="tb-right">
-      <label class="hide-toggle"><input type="checkbox" id="toggle-hide-sent" onchange="renderDashboard()" checked><span>Hide Sent</span></label>
-      <div class="tb-sep"></div>
-      <button id="btn-requeue-selected"  class="tb-action"       onclick="requeueSelected()"><i data-lucide="rotate-ccw"></i> Re-Queue <span id="requeue-count">0</span></button>
-      <button id="btn-copy-advances"     class="tb-action green" onclick="copyAdvances()"><i data-lucide="clipboard"></i> Copy <span id="copy-count">0</span></button>
-      <button id="btn-delete-selected"   class="tb-action red"   onclick="deleteSelected()"><i data-lucide="trash-2"></i> Delete <span id="selected-count">0</span></button>
-      <div class="tb-sep"></div>
-      <button class="ib" id="btn-form-toggle"  title="Toggle form panel"><i data-lucide="sidebar-close"></i></button>
-      <button class="ib" id="btn-maximize"     title="Full width tables (⌘⇧M)"><i data-lucide="maximize-2"></i></button>
-    </div>
-  </header>
+    <!-- CONTENT -->
+    <div class="content">
 
-  <!-- ░░░ CONTENT ░░░ -->
-  <div class="content">
+      <!-- FORM PANEL -->
+      <section class="form-panel">
+        <div class="form-inner">
+          <div class="fhead">
+            <div class="fhead-icon"><i data-lucide="plus-circle"></i></div>
+            <h2 id="form-title">New Record</h2>
+            <span class="date-chip">Date: <span id="po-date-form">…</span></span>
+          </div>
 
-    <!-- ── FORM PANEL ── -->
-    <section class="form-panel">
-      <div class="form-inner">
+          <div class="edit-banner" id="edit-banner"><i data-lucide="edit-3"></i> Editing — changes will update the database</div>
+          <div class="hold-banner" id="hold-banner"><i data-lucide="pause-circle"></i> This entry is On Hold — won't be dispatched</div>
 
-        <div class="form-head">
-          <div class="fh-icon"><i data-lucide="plus-circle"></i></div>
-          <h2 id="form-title">New Record</h2>
-          <span class="date-chip">Date: <span id="po-date-form">…</span></span>
-        </div>
-
-        <!-- edit mode indicator -->
-        <div class="edit-indicator" id="edit-indicator">
-          <i data-lucide="edit-3"></i> Editing record — changes will update the database
-        </div>
-
-        <form id="approval-form">
-
-          <div class="fr">
-            <div class="fb">
-              <div class="flrow">
-                <span class="flbl">Type</span>
-                <label class="inline-chk" for="has-advance"><input type="checkbox" id="has-advance"> Advance?</label>
+          <form id="approval-form">
+            <div class="fr">
+              <div class="fb">
+                <div class="flrow">
+                  <span class="flbl">Type</span>
+                  <label class="inline-chk" for="has-advance"><input type="checkbox" id="has-advance"> Advance?</label>
+                </div>
+                <select id="approval-type" required>
+                  <option value="PO Approval">PO Approval</option>
+                  <option value="Advance Approval">Advance Approval</option>
+                </select>
               </div>
-              <select id="approval-type" required>
-                <option value="PO Approval">PO Approval</option>
-                <option value="Advance Approval">Advance Approval</option>
-              </select>
+              <div class="fb"><label for="pr-so-number">PR / SO #</label><input type="text" id="pr-so-number" placeholder="PR/SO #"></div>
             </div>
-            <div class="fb">
-              <label for="pr-so-number">PR / SO #</label>
-              <input type="text" id="pr-so-number" placeholder="PR/SO #">
-            </div>
-          </div>
 
-          <div class="fr">
-            <div class="fb">
-              <label for="po-number">PO Number <span class="req">*</span></label>
-              <input type="text" id="po-number" placeholder="PO #" required>
+            <div class="fr">
+              <div class="fb"><label for="po-number">PO Number <span class="req">*</span></label><input type="text" id="po-number" placeholder="PO #" required></div>
+              <div class="fb"><label for="wo-so-number">WO / SO #</label><input type="text" id="wo-so-number" placeholder="WO/SO #"></div>
             </div>
-            <div class="fb">
-              <label for="wo-so-number">WO / SO #</label>
-              <input type="text" id="wo-so-number" placeholder="WO/SO #">
-            </div>
-          </div>
 
-          <hr class="fdiv">
+            <hr class="fdiv">
 
-          <div class="fr">
-            <div class="fb">
-              <label for="description">Description</label>
-              <input type="text" id="description" placeholder="Short summary…">
-            </div>
-            <div class="fb">
-              <label for="category">Category <span class="req">*</span></label>
-              <select id="category" required>
-                <option value="">Select…</option>
-                <option>Stock</option>
-                <option>Service</option>
-                <option>Material purchase</option>
-                <option>Capex</option>
-                <option>Indirect purchase</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="fr one">
-            <div class="fb">
-              <div class="flrow">
-                <span class="flbl">Supplier <span class="req">*</span></span>
-                <button type="button" id="btn-remove-supplier" class="link-btn"><i data-lucide="trash-2"></i> Remove</button>
-              </div>
-              <!-- reuse dropdown -->
-              <div class="reuse-wrap">
-                <input type="text" id="supplier" list="supplier-list" placeholder="Supplier name" required autocomplete="off" oninput="filterReuseMenu(this.value)">
-                <datalist id="supplier-list"></datalist>
-                <div class="reuse-menu" id="reuse-menu"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="fr">
-            <div class="fb">
-              <label for="amount">Amount</label>
-              <div class="amt-row">
-                <input type="number" step="0.01" id="amount" placeholder="0.00" required>
-                <select id="currency" class="cur-sel">
-                  <option value="SAR">⃁ SAR</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="AED">AED</option>
-                  <option value="BHD">BHD</option>
-                  <option value="KWD">KWD</option>
-                  <option value="OMR">OMR</option>
-                  <option value="QAR">QAR</option>
-                  <option value="CNY">CNY</option>
+            <div class="fr">
+              <div class="fb"><label for="description">Description</label><input type="text" id="description" placeholder="Short summary…"></div>
+              <div class="fb">
+                <label for="category">Category <span class="req">*</span></label>
+                <select id="category" required>
+                  <option value="">Select…</option>
+                  <option>Stock</option><option>Service</option>
+                  <option>Material purchase</option><option>Capex</option>
+                  <option>Indirect purchase</option>
                 </select>
               </div>
             </div>
-            <div class="fb">
-              <label>SAR Equivalent ⃁</label>
-              <input type="number" id="amount-sar" readonly class="rf">
-              <div id="rate-hint" class="rate-hint"></div>
-            </div>
-          </div>
 
-          <div id="advance-fields" class="adv-panel" style="display:none">
-            <div class="fb">
-              <label for="advance-percent">Advance %</label>
-              <select id="advance-percent">
-                <option value="0">Select %</option>
-                <option value="10">10%</option><option value="20">20%</option>
-                <option value="30">30%</option><option value="50">50%</option>
-                <option value="100">100%</option><option value="custom">Custom…</option>
-              </select>
+            <div class="fr one">
+              <div class="fb">
+                <div class="flrow">
+                  <span class="flbl">Supplier <span class="req">*</span></span>
+                  <button type="button" id="btn-remove-supplier" class="link-btn"><i data-lucide="trash-2"></i> Remove</button>
+                </div>
+                <div class="reuse-wrap">
+                  <input type="text" id="supplier" list="supplier-list" placeholder="Supplier name" required autocomplete="off" oninput="filterReuse(this.value)">
+                  <datalist id="supplier-list"></datalist>
+                  <div class="reuse-menu" id="reuse-menu"></div>
+                </div>
+              </div>
             </div>
-            <div class="fb" id="custom-percent-group" style="display:none">
-              <label for="custom-percent">Custom %</label>
-              <input type="number" id="custom-percent" placeholder="e.g. 15">
+
+            <div class="fr">
+              <div class="fb">
+                <label for="amount">Amount</label>
+                <div class="amt-row">
+                  <input type="number" step="0.01" id="amount" placeholder="0.00" required>
+                  <select id="currency" class="cur-sel">
+                    <option value="SAR">⃁ SAR</option>
+                    <option value="USD">USD</option><option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option><option value="AED">AED</option>
+                    <option value="BHD">BHD</option><option value="KWD">KWD</option>
+                    <option value="OMR">OMR</option><option value="QAR">QAR</option>
+                    <option value="CNY">CNY</option>
+                  </select>
+                </div>
+              </div>
+              <div class="fb">
+                <label>SAR Equivalent ⃁</label>
+                <input type="number" id="amount-sar" readonly class="rf">
+                <div id="rate-hint" class="rate-hint"></div>
+              </div>
             </div>
-            <div class="fb">
-              <label for="advance-amount-cur">Advance (Cur)</label>
-              <input type="text" id="advance-amount-cur" readonly class="rf">
+
+            <div id="advance-fields" class="adv-panel" style="display:none">
+              <div class="fb"><label for="advance-percent">Advance %</label>
+                <select id="advance-percent">
+                  <option value="0">Select %</option>
+                  <option value="10">10%</option><option value="20">20%</option>
+                  <option value="30">30%</option><option value="50">50%</option>
+                  <option value="100">100%</option><option value="custom">Custom…</option>
+                </select>
+              </div>
+              <div class="fb" id="custom-percent-group" style="display:none"><label for="custom-percent">Custom %</label><input type="number" id="custom-percent" placeholder="e.g. 15"></div>
+              <div class="fb"><label for="advance-amount-cur">Advance (Cur)</label><input type="text" id="advance-amount-cur" readonly class="rf"></div>
+              <div class="fb"><label for="advance-amount">Advance ⃁ SAR</label><input type="number" id="advance-amount" readonly class="rf"></div>
             </div>
-            <div class="fb">
-              <label for="advance-amount">Advance ⃁ SAR</label>
-              <input type="number" id="advance-amount" readonly class="rf">
+
+            <div class="fr one">
+              <div class="fb"><label for="notes">Notes</label><textarea id="notes" placeholder="Any context for the GM…"></textarea></div>
             </div>
-          </div>
 
-          <div class="fr one">
-            <div class="fb">
-              <label for="notes">Notes</label>
-              <textarea id="notes" placeholder="Any context for the GM…"></textarea>
+            <div class="form-acts">
+              <button type="submit" id="btn-log-entry" class="btn btn-pri"><i data-lucide="database"></i> Log Entry</button>
+              <button type="button" id="btn-save-hold" class="btn btn-hold"><i data-lucide="pause-circle"></i> Save for Later</button>
+              <button type="button" id="btn-cancel-edit" class="btn btn-ghost" style="display:none"><i data-lucide="x"></i> Cancel</button>
             </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" id="btn-log-entry" class="btn btn-primary"><i data-lucide="database"></i> Log Entry</button>
-            <button type="button" id="btn-cancel-edit" class="btn btn-ghost" style="display:none">Cancel</button>
-          </div>
-
-        </form>
-      </div>
-    </section>
-
-    <!-- ── TABLES PANEL ── -->
-    <section class="tables-panel">
-
-      <!-- Filter bar -->
-      <div class="filter-row">
-        <span class="fc-label">Filter</span>
-        <button class="filter-chip active" id="fc-all"     onclick="setFilter('all')"><i data-lucide="layers"></i> All</button>
-        <button class="filter-chip"        id="fc-pending" onclick="setFilter('pending')"><i data-lucide="clock"></i> Pending</button>
-        <button class="filter-chip"        id="fc-sent"    onclick="setFilter('sent')"><i data-lucide="check-circle"></i> Sent</button>
-        <button class="filter-chip"        id="fc-today"   onclick="setFilter('today')"><i data-lucide="calendar"></i> Today</button>
-        <button class="filter-chip"        id="fc-week"    onclick="setFilter('week')"><i data-lucide="calendar-days"></i> This Week</button>
-        <div style="margin-left:auto;display:flex;gap:5px">
-          <label class="hide-toggle"><input type="checkbox" id="toggle-hide-sent" style="display:none" onchange="renderDashboard()" checked></label>
+          </form>
         </div>
-      </div>
+      </section>
 
-      <!-- PO Table -->
-      <div class="data-card">
-        <div class="dc-head">
-          <div class="dc-title">
-            <i data-lucide="file-text"></i>
-            PO Approvals
-            <span class="cpill" id="po-count">0</span>
+      <!-- TABLES PANEL -->
+      <section class="tpanel">
+
+        <div class="filter-bar">
+          <span class="fc-lbl">Filter</span>
+          <button class="fchip on"  id="fc-all"     onclick="setFilter('all')"><i data-lucide="layers"></i> All</button>
+          <button class="fchip"     id="fc-pending" onclick="setFilter('pending')"><i data-lucide="clock"></i> Pending</button>
+          <button class="fchip hold-chip" id="fc-hold" onclick="setFilter('hold')"><i data-lucide="pause-circle"></i> On Hold</button>
+          <button class="fchip"     id="fc-sent"    onclick="setFilter('sent')"><i data-lucide="check-circle"></i> Sent</button>
+          <button class="fchip"     id="fc-today"   onclick="setFilter('today')"><i data-lucide="calendar"></i> Today</button>
+          <button class="fchip"     id="fc-week"    onclick="setFilter('week')"><i data-lucide="calendar-days"></i> This Week</button>
+        </div>
+
+        <!-- PO Table -->
+        <div class="dcard">
+          <div class="dchead">
+            <div class="dctitle"><i data-lucide="file-text"></i> PO Approvals <span class="cpill" id="po-count">0</span></div>
+          </div>
+          <div class="twrap">
+            <table class="dtable" id="po-table">
+              <thead><tr>
+                <th style="width:28px"><input type="checkbox" id="selAllPo" onchange="toggleSelAll('po')"></th>
+                <th onclick="sortT('po','suppNo')">Supp.</th>
+                <th onclick="sortT('po','supplier')">Vendor</th>
+                <th onclick="sortT('po','po')">PO #</th>
+                <th onclick="sortT('po','amount')">Amount</th>
+                <th>Cur</th>
+                <th onclick="sortT('po','amountSar')">SAR ⃁</th>
+                <th>Notes</th>
+                <th onclick="sortT('po','date')">Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th onclick="sortT('po','status')">Status</th>
+                <th style="width:84px"></th>
+              </tr></thead>
+              <tbody id="po-tbody">
+                <tr class="erow"><td colspan="13"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>No PO entries yet</p><span>Fill the form and click Log Entry</span></div></td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
-        <div class="table-wrap">
-          <table class="data-table" id="po-table">
-            <thead><tr>
-              <th style="width:28px"><input type="checkbox" id="selectAllPo" onchange="toggleSelectAll('po')"></th>
-              <th onclick="sortTable('po','suppNo')">Supp.</th>
-              <th onclick="sortTable('po','supplier')">Vendor</th>
-              <th onclick="sortTable('po','po')">PO #</th>
-              <th onclick="sortTable('po','amount')">Amount</th>
-              <th>Cur</th>
-              <th onclick="sortTable('po','amountSar')">SAR ⃁</th>
-              <th>Notes</th>
-              <th onclick="sortTable('po','date')">Date</th>
-              <th>Description</th>
-              <th>Category</th>
-              <th onclick="sortTable('po','is_sent')">Status</th>
-              <th style="width:72px"></th>
-            </tr></thead>
-            <tbody id="po-tbody">
-              <tr class="empty-row"><td colspan="13">
-                <div class="empty-state"><i data-lucide="file-text" class="e-ico"></i><p>No PO entries yet</p><span>Fill the form and click Log Entry</span></div>
-              </td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      <!-- Advance Table -->
-      <div class="data-card">
-        <div class="dc-head">
-          <div class="dc-title">
-            <i data-lucide="landmark"></i>
-            Advance Payments
-            <span class="cpill" id="adv-count">0</span>
+        <!-- Advance Table -->
+        <div class="dcard">
+          <div class="dchead">
+            <div class="dctitle"><i data-lucide="landmark"></i> Advance Payments <span class="cpill" id="adv-count">0</span></div>
+            <button class="btn btn-ghost sm" onclick="openWeeklyModal()"><i data-lucide="calendar"></i> This Week</button>
           </div>
-          <button class="btn btn-ghost small" onclick="openWeeklyAdvancesModal()"><i data-lucide="calendar"></i> This Week</button>
+          <div class="twrap">
+            <table class="dtable" id="adv-table">
+              <thead><tr>
+                <th style="width:28px"><input type="checkbox" id="selAllAdv" onchange="toggleSelAll('advance')"></th>
+                <th onclick="sortT('adv','suppNo')">Supp.</th>
+                <th onclick="sortT('adv','supplier')">Vendor</th>
+                <th onclick="sortT('adv','po')">PO #</th>
+                <th onclick="sortT('adv','amount')">PO Amt</th>
+                <th>Cur</th>
+                <th>Adv (Cur)</th>
+                <th onclick="sortT('adv','advanceAmount')">Adv SAR ⃁</th>
+                <th>Notes</th>
+                <th onclick="sortT('adv','date')">Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th onclick="sortT('adv','status')">Status</th>
+                <th style="width:84px"></th>
+              </tr></thead>
+              <tbody id="advance-tbody">
+                <tr class="erow"><td colspan="14"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>No advance entries yet</p><span>Check "Advance?" when logging</span></div></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="table-wrap">
-          <table class="data-table" id="adv-table">
-            <thead><tr>
-              <th style="width:28px"><input type="checkbox" id="selectAllAdv" onchange="toggleSelectAll('advance')"></th>
-              <th onclick="sortTable('adv','suppNo')">Supp.</th>
-              <th onclick="sortTable('adv','supplier')">Vendor</th>
-              <th onclick="sortTable('adv','po')">PO #</th>
-              <th onclick="sortTable('adv','amount')">PO Amt</th>
-              <th>Cur</th>
-              <th>Adv (Cur)</th>
-              <th onclick="sortTable('adv','advanceAmount')">Adv SAR ⃁</th>
-              <th>Notes</th>
-              <th onclick="sortTable('adv','date')">Date</th>
-              <th>Description</th>
-              <th>Category</th>
-              <th onclick="sortTable('adv','is_sent')">Status</th>
-              <th style="width:72px"></th>
-            </tr></thead>
-            <tbody id="advance-tbody">
-              <tr class="empty-row"><td colspan="14">
-                <div class="empty-state"><i data-lucide="landmark" class="e-ico"></i><p>No advance entries yet</p><span>Check "Advance?" when logging</span></div>
-              </td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-    </section>
-  </div><!-- content -->
+      </section>
+    </div><!-- content -->
   </div><!-- main-wrap -->
 </div><!-- app -->
 
-
-<!-- ░░░ MODALS ░░░ -->
-<div id="settings-modal" class="modal-overlay">
+<!-- MODALS -->
+<div id="settings-modal" class="mo">
   <div class="modal">
-    <div class="modal-hd"><h3><i data-lucide="settings"></i> Settings</h3><button class="btn-x" id="btn-close-settings">&times;</button></div>
-    <div class="modal-body">
-      <div class="s-field"><label>Supabase Project URL</label><input type="text" id="input-db-url" placeholder="https://your-project.supabase.co"></div>
-      <div class="s-field"><label>Database Key (anon)</label><input type="password" id="input-db-key" placeholder="Paste anon key…"></div>
-      <div class="s-field"><label>Auto-Send Time (24h)</label><input type="time" id="input-send-time"></div>
+    <div class="mhd"><h3><i data-lucide="settings"></i> Settings</h3><button class="btn-x" id="btn-close-settings">&times;</button></div>
+    <div class="mbody">
+      <div class="sf"><label>Supabase Project URL</label><input type="text" id="input-db-url" placeholder="https://your-project.supabase.co"></div>
+      <div class="sf"><label>Database Key (anon)</label><input type="password" id="input-db-key" placeholder="Paste anon key…"></div>
+      <div class="sf"><label>Auto-Send Time (24h)</label><input type="time" id="input-send-time"></div>
       <div class="sdiv">EmailJS</div>
-      <div class="s-field"><label>Service ID</label><input type="text" id="input-emailjs-svc" placeholder="service_xxxxx"></div>
-      <div class="s-field"><label>Template ID</label><input type="text" id="input-emailjs-tpl" placeholder="template_xxxxx"></div>
-      <div class="s-field"><label>Public Key</label><input type="password" id="input-emailjs-pub" placeholder="Public key…"></div>
-      <div class="modal-acts">
-        <button id="btn-export"         class="btn btn-ghost full-w"><i data-lucide="file-spreadsheet"></i> Export to Excel</button>
-        <button id="btn-finalize"        class="btn btn-primary full-w"><i data-lucide="send"></i> Dispatch Summary Now</button>
-        <button id="btn-save-settings"   class="btn btn-secondary full-w">Save Settings</button>
+      <div class="sf"><label>Service ID</label><input type="text" id="input-emailjs-svc" placeholder="service_xxxxx"></div>
+      <div class="sf"><label>Template ID</label><input type="text" id="input-emailjs-tpl" placeholder="template_xxxxx"></div>
+      <div class="sf"><label>Public Key</label><input type="password" id="input-emailjs-pub" placeholder="Public key…"></div>
+      <div class="macts">
+        <button id="btn-export"       class="btn btn-ghost fw"><i data-lucide="file-spreadsheet"></i> Export to Excel</button>
+        <button id="btn-finalize"     class="btn btn-pri fw"><i data-lucide="send"></i> Preview & Dispatch Now</button>
+        <button id="btn-save-settings" class="btn btn-sec fw">Save Settings</button>
       </div>
     </div>
   </div>
 </div>
 
-<div id="success-modal" class="modal-overlay">
-  <div class="modal success-modal">
+<div id="success-modal" class="mo">
+  <div class="modal suc-modal">
     <i data-lucide="check-circle" class="suc-ico"></i>
-    <h2>Dispatch Successful!</h2>
+    <h2>Dispatched!</h2>
     <p>Summary sent to Manager and CC list.</p>
-    <button onclick="document.getElementById('success-modal').classList.remove('active')" class="btn btn-primary full-w">Done</button>
+    <button onclick="document.getElementById('success-modal').classList.remove('open')" class="btn btn-pri fw">Done</button>
   </div>
 </div>
 
-<div id="weekly-advances-modal" class="modal-overlay">
+<!-- Dispatch preview modal -->
+<div id="preview-modal" class="mo">
   <div class="modal wide-modal">
-    <div class="modal-hd"><h3><i data-lucide="calendar"></i> This Week's Advances</h3><button class="btn-x" id="btn-close-weekly-advances">&times;</button></div>
-    <div class="modal-body">
-      <p class="modal-hint">Select rows then copy — paste directly into your shared template.</p>
-      <div class="table-wrap" style="max-height:340px;overflow-y:auto">
-        <table class="data-table">
+    <div class="mhd"><h3><i data-lucide="send"></i> Dispatch Preview</h3><button class="btn-x" id="btn-close-preview">&times;</button></div>
+    <div class="mbody">
+      <div id="preview-content" style="max-height:380px;overflow-y:auto"></div>
+      <div class="macts" style="margin-top:14px">
+        <button id="btn-confirm-dispatch" class="btn btn-pri fw"><i data-lucide="send"></i> Confirm & Send</button>
+        <button onclick="document.getElementById('preview-modal').classList.remove('open')" class="btn btn-ghost fw">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="weekly-modal" class="mo">
+  <div class="modal wide-modal">
+    <div class="mhd"><h3><i data-lucide="calendar"></i> This Week's Advances</h3><button class="btn-x" id="btn-close-weekly">&times;</button></div>
+    <div class="mbody">
+      <p class="mhint">Select rows then copy — paste directly into your shared template.</p>
+      <div class="twrap" style="max-height:340px;overflow-y:auto">
+        <table class="dtable">
           <thead><tr>
-            <th><input type="checkbox" id="selectAllWeekly" checked onchange="toggleSelectAllWeekly()"></th>
+            <th><input type="checkbox" id="selAllWeekly" checked onchange="toggleSelAllWeekly()"></th>
             <th>Supp.</th><th>Vendor</th><th>PO #</th><th>Description</th>
             <th>PO Amt</th><th>Cur</th><th>Adv (Cur)</th><th>Adv SAR ⃁</th><th>Notes</th>
           </tr></thead>
-          <tbody id="weekly-advances-tbody"></tbody>
+          <tbody id="weekly-tbody"></tbody>
         </table>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-primary" onclick="copyWeeklyAdvances()"><i data-lucide="clipboard-copy"></i> Copy Selected</button>
+        <button class="btn btn-pri" onclick="copyWeeklyAdvances()"><i data-lucide="clipboard-copy"></i> Copy Selected</button>
       </div>
     </div>
   </div>
 </div>
 
-<div id="setup-modal" class="modal-overlay">
+<div id="setup-modal" class="mo">
   <div class="modal setup-modal">
     <div class="setup-icon"><i data-lucide="shield-check"></i></div>
     <h2>Team Setup</h2>
     <p>Enter your Supabase connection details to activate the dashboard.</p>
-    <div class="s-field" style="text-align:left"><label>Project URL</label><input type="text" id="setup-db-url" placeholder="https://your-project.supabase.co"></div>
-    <div class="s-field" style="text-align:left;margin-top:8px"><label>Anon Key</label><input type="password" id="setup-db-key" placeholder="eyJhbGci…"></div>
-    <button id="btn-activate-setup" class="btn btn-primary full-w" style="margin-top:14px">Activate Dashboard</button>
+    <div class="sf" style="text-align:left"><label>Project URL</label><input type="text" id="setup-db-url" placeholder="https://your-project.supabase.co"></div>
+    <div class="sf" style="text-align:left;margin-top:8px"><label>Anon Key</label><input type="password" id="setup-db-key" placeholder="eyJhbGci…"></div>
+    <button id="btn-activate-setup" class="btn btn-pri fw" style="margin-top:14px">Activate Dashboard</button>
     <p class="setup-note">Stored in your browser only — never sent anywhere.</p>
   </div>
 </div>
 
-<button class="fab-restore" id="fab-restore"><i data-lucide="layout-dashboard"></i> Restore Layout</button>
+<button class="fab" id="fab-restore"><i data-lucide="layout-dashboard"></i> Restore Layout</button>
 <div id="toasts"></div>
 <script src="script.js"></script>
 </body>
