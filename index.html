@@ -21,16 +21,31 @@
       </div>
 
       <div class="ss">
-        <div class="ssl">Dispatch</div>
-        <div class="sf"><label>Manager Email</label><input type="email" id="input-manager-email" placeholder="manager@example.com"></div>
-        <div class="sf">
-          <label>CC Recipients</label>
-          <div class="tag-wrap" id="cc-tags-container">
-            <div class="tags-list" id="cc-tags-list"></div>
-            <input type="text" id="new-cc-input" placeholder="Add & press Enter…">
-            <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
+        <div class="ssl-row">
+          <span class="ssl">Dispatch</span>
+          <button class="email-lock-btn" id="email-lock-btn" onclick="toggleEmailLock()" title="Email settings locked">
+            <i data-lucide="lock" id="email-lock-icon"></i>
+          </button>
+        </div>
+
+        <!-- LOCKED STATE -->
+        <div id="email-locked-view" class="email-locked-view">
+          <div class="locked-badge"><i data-lucide="lock"></i> Email settings are protected</div>
+        </div>
+
+        <!-- UNLOCKED STATE (hidden by default) -->
+        <div id="email-unlocked-view" style="display:none">
+          <div class="sf"><label>Manager Email</label><input type="email" id="input-manager-email" placeholder="manager@example.com"></div>
+          <div class="sf">
+            <label>CC Recipients</label>
+            <div class="tag-wrap" id="cc-tags-container">
+              <div class="tags-list" id="cc-tags-list"></div>
+              <input type="text" id="new-cc-input" placeholder="Add & press Enter…">
+              <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
+            </div>
           </div>
         </div>
+
         <div class="sf"><span id="daily-schedule-text" class="sched-badge"><i data-lucide="clock"></i>&nbsp;Auto-Dispatch: Pending…</span></div>
       </div>
 
@@ -348,6 +363,28 @@
     <div class="sf" style="text-align:left;margin-top:8px"><label>Anon Key</label><input type="password" id="setup-db-key" placeholder="eyJhbGci…"></div>
     <button id="btn-activate-setup" class="btn btn-pri fw" style="margin-top:14px">Activate Dashboard</button>
     <p class="setup-note">Stored in your browser only — never sent anywhere.</p>
+  </div>
+</div>
+
+<!-- EMAIL LOCK MODAL -->
+<div id="email-lock-modal" class="mo">
+  <div class="modal" style="max-width:340px;text-align:center">
+    <div style="width:44px;height:44px;background:var(--adim);border-radius:var(--r2);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;color:var(--a)">
+      <i data-lucide="lock-keyhole"></i>
+    </div>
+    <h3 style="font-size:.92rem;font-weight:700;margin-bottom:4px">Email Settings</h3>
+    <p style="font-size:.78rem;color:var(--t1);margin-bottom:16px">Enter password to edit dispatch settings</p>
+    <div class="sf" style="text-align:left;margin-bottom:6px">
+      <label>Password</label>
+      <input type="password" id="email-lock-password" placeholder="Enter password…" onkeydown="if(event.key==='Enter')submitEmailLock()">
+    </div>
+    <div id="email-lock-error" style="display:none;font-size:.72rem;color:var(--red);margin-bottom:8px;text-align:left">
+      Incorrect password
+    </div>
+    <div style="display:grid;gap:6px;margin-top:10px">
+      <button class="btn btn-pri fw" onclick="submitEmailLock()"><i data-lucide="unlock"></i> Unlock</button>
+      <button class="btn btn-ghost fw" onclick="document.getElementById('email-lock-modal').classList.remove('open');document.getElementById('email-lock-password').value='';document.getElementById('email-lock-error').style.display='none'">Cancel</button>
+    </div>
   </div>
 </div>
 

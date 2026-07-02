@@ -200,7 +200,7 @@ async function loadEntries() {
 
 async function autoPurge() {
   const d=new Date(); d.setDate(d.getDate()-30);
-  try { await supabaseClient.from('entries').delete().lt('po_date',d.toISOString().split('T')[0]); } catch{}
+  try { await supabaseClient.from('entries').delete().lt('po_date',d.toISOString().split('T')[0]).eq('is_sent',true); } catch{}
 }
 
 function subscribeRealtime() {
@@ -253,6 +253,8 @@ async function handleSubmit(e, onHold=false) {
     }
     form.reset();
     hasAdvEl.checked=false;
+    advFields.style.display='none';
+    advAmtEl.value=0;
     document.getElementById('form-title').textContent='New Record';
     sessionStorage.removeItem('approval_form_draft');
     calculate();
@@ -286,7 +288,12 @@ function cancelEdit() {
   cancelBtn.style.display='none';
   editBanner.classList.remove('show');
   holdBanner.classList.remove('show');
-  form.reset(); calculate();
+  form.reset();
+  hasAdvEl.checked=false;
+  advFields.style.display='none';
+  advAmtEl.value=0;
+  sessionStorage.removeItem('approval_form_draft');
+  calculate();
 }
 
 async function deleteEntry(id) {
@@ -649,32 +656,18 @@ async function sendEmail(isScheduled=false) {
   const pending=entries.filter(e=>e.status==='pending');
   if (!pending.length) { if(!isScheduled) toast('Nothing pending to send','info'); return; }
 
-  // ── DOUBLE-SEND FIX ──
-  // Atomic lock in Supabase: try to write a lock row with current minute.
-  // If it already exists (another tab or tick), bail out immediately.
-  if (supabaseClient) {
-    const minuteKey = new Date().toISOString().slice(0,16); // "2026-06-01T09:00"
-    try {
-      // insert will fail on unique constraint if another tab already inserted this minute
-      const {error} = await supabaseClient.from('settings')
-        .insert([{key:`dispatch_lock_${minuteKey}`, value:'1'}]);
-      if (error) {
-        // Already sent this minute — abort silently for scheduled, warn for manual
-        if (!isScheduled) toast('Already dispatched this minute — please wait','info');
-        return;
-      }
-      // Clean up old lock keys (keep only last 5 minutes)
-      const oldKey = new Date(Date.now()-5*60000).toISOString().slice(0,16);
-      await supabaseClient.from('settings').delete().lt('key',`dispatch_lock_${oldKey}`).like('key','dispatch_lock_%');
-    } catch {}
-  }
+  // Double-send guard: for scheduled sends, block if already sent this minute
+  const nowMinute = new Date().toISOString().slice(0,16);
+  if (isScheduled && sendEmail._lastMinute === nowMinute) return;
+  if (isScheduled) sendEmail._lastMinute = nowMinute;
 
   isSending=true;
+  let ids = [];
   try {
     if (!managerEmail) throw new Error('Manager email not set');
     if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings');
 
-    const ids=pending.map(i=>i.id);
+    ids=pending.map(i=>i.id);
     // Mark sent BEFORE sending email — prevents retry getting different data
     const {error:ue}=await supabaseClient.from('entries').update({is_sent:true}).in('id',ids).eq('is_sent',false);
     if(ue) throw ue;
@@ -711,10 +704,13 @@ async function sendEmail(isScheduled=false) {
     toast('Dispatched successfully!','success');
     document.getElementById('success-modal').classList.add('open');
   } catch(err) {
-    // Rollback is_sent
-    const pending2=entries.filter(e=>e.status==='pending');
-    if(pending2.length) await supabaseClient.from('entries').update({is_sent:false}).in('id',pending2.map(i=>i.id));
-    toast('Dispatch failed: '+(err.text||err.message||err),'error');
+    // Rollback: un-mark any entries we already flipped to sent
+    if(ids && ids.length) {
+      await supabaseClient.from('entries').update({is_sent:false}).in('id',ids);
+    }
+    const errMsg = err?.text || err?.message || err?.status || JSON.stringify(err) || 'Unknown error';
+    console.error('Dispatch error full object:', err);
+    toast('Dispatch failed: ' + errMsg, 'error');
   } finally { isSending=false; }
 }
 
@@ -821,8 +817,7 @@ function removeSupplierFromMemory(){
 // ═══════════════════════════
 function renderCcTags(){
   const list=document.getElementById('cc-tags-list'); if(!list) return;
-  list.innerHTML=ccEmails.map((e,i)=>`<div class="tag"><span>${e}</span><i data-lucide="x" onclick="removeCcTag(${i})"></i></div>`).join('');
-  lucide.createIcons();
+  list.innerHTML=ccEmails.map((e,i)=>`<div class="tag"><span title="${e}">${e}</span><svg onclick="removeCcTag(${i})" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;opacity:.75;flex-shrink:0"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>`).join('');
 }
 window.addCcFromInput=function(){
   const input=document.getElementById('new-cc-input');
@@ -872,6 +867,81 @@ function restoreDraft(){
     if(custPctEl&&d['custom-percent']) custPctEl.value=d['custom-percent'];
     if(advPctEl?.value==='custom') custPctGrp.style.display='block';
   }catch{}
+}
+
+// ═══════════════════════════
+//  EMAIL LOCK
+// ═══════════════════════════
+async function hashPassword(pwd) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+let emailUnlocked = false;
+
+window.toggleEmailLock = function() {
+  if (emailUnlocked) {
+    lockEmail();
+  } else {
+    // Show password modal
+    document.getElementById('email-lock-modal').classList.add('open');
+    setTimeout(() => document.getElementById('email-lock-password')?.focus(), 100);
+  }
+};
+
+window.submitEmailLock = async function() {
+  const pwd = document.getElementById('email-lock-password')?.value || '';
+  const errEl = document.getElementById('email-lock-error');
+  const hash = await hashPassword(pwd);
+
+  // Compare against stored hash of SM112233
+  const correctHash = await hashPassword('SM112233');
+  if (hash === correctHash) {
+    emailUnlocked = true;
+    document.getElementById('email-lock-modal').classList.remove('open');
+    document.getElementById('email-lock-password').value = '';
+    errEl.style.display = 'none';
+    showEmailFields();
+    toast('Email settings unlocked', 'success');
+  } else {
+    errEl.style.display = 'block';
+    document.getElementById('email-lock-password').select();
+  }
+};
+
+function showEmailFields() {
+  const locked   = document.getElementById('email-locked-view');
+  const unlocked = document.getElementById('email-unlocked-view');
+  const btn      = document.getElementById('email-lock-btn');
+  const ico      = document.getElementById('email-lock-icon');
+  if (locked)   locked.style.display   = 'none';
+  if (unlocked) { unlocked.style.display = 'block'; void unlocked.offsetWidth; }
+  if (btn) btn.classList.add('unlocked');
+  if (ico) { ico.setAttribute('data-lucide','unlock'); lucide.createIcons(); }
+}
+
+function lockEmail() {
+  emailUnlocked = false;
+  const locked   = document.getElementById('email-locked-view');
+  const unlocked = document.getElementById('email-unlocked-view');
+  const btn      = document.getElementById('email-lock-btn');
+  const ico      = document.getElementById('email-lock-icon');
+  if (locked)   locked.style.display   = 'block';
+  if (unlocked) unlocked.style.display = 'none';
+  if (btn) btn.classList.remove('unlocked');
+  if (ico) { ico.setAttribute('data-lucide','lock'); lucide.createIcons(); }
+}
+
+// Re-lock when settings modal closes
+function setupEmailLockListeners() {
+  // Lock email when clicking outside the unlock modal
+  document.getElementById('email-lock-modal')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('email-lock-modal')) {
+      document.getElementById('email-lock-modal').classList.remove('open');
+      document.getElementById('email-lock-password').value = '';
+      document.getElementById('email-lock-error').style.display = 'none';
+    }
+  });
 }
 
 // ═══════════════════════════
@@ -932,7 +1002,7 @@ function setupLayout(){
 //  LISTENERS
 // ═══════════════════════════
 form.addEventListener('submit', e=>handleSubmit(e, false));
-document.getElementById('btn-save-hold')?.addEventListener('click', e=>{ e.preventDefault(); if(form.reportValidity()) handleSubmit(e,true); });
+document.getElementById('btn-save-hold')?.addEventListener('click', async e=>{ e.preventDefault(); if(form.reportValidity()) await handleSubmit({preventDefault:()=>{}}, true); });
 form.addEventListener('input',  saveDraft);
 form.addEventListener('change', saveDraft);
 form.addEventListener('submit', ()=>setTimeout(()=>sessionStorage.removeItem('approval_form_draft'),1500));
@@ -954,7 +1024,7 @@ document.getElementById('btn-finalize')?.addEventListener('click',openDispatchPr
 document.getElementById('btn-confirm-dispatch')?.addEventListener('click',confirmDispatch);
 document.getElementById('btn-close-preview')?.addEventListener('click',()=>document.getElementById('preview-modal').classList.remove('open'));
 cancelBtn?.addEventListener('click',cancelEdit);
-mgrEmailEl?.addEventListener('change',saveSettings);
+mgrEmailEl?.addEventListener('change',()=>{ managerEmail=mgrEmailEl.value.trim(); });
 document.getElementById('btn-theme-toggle')?.addEventListener('click',toggleTheme);
 document.getElementById('btn-activate-setup')?.addEventListener('click',activateDashboard);
 document.getElementById('btn-export')?.addEventListener('click',exportToExcel);
@@ -974,4 +1044,5 @@ document.querySelectorAll('.mo').forEach(m=>{
 //  BOOT
 // ═══════════════════════════
 setupLayout();
+setupEmailLockListeners();
 init();

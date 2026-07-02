@@ -607,3 +607,53 @@ tr:hover .row-acts{opacity:1}
   .content{flex-direction:column}
   .form-panel{border-right:none;border-bottom:1px solid var(--b0);max-height:60vh}
 }
+
+/* ════════ EMAIL LOCK ════════ */
+.ssl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.ssl-row .ssl { margin-bottom: 0; }
+
+.email-lock-btn {
+  width: 24px; height: 24px;
+  background: transparent;
+  border: 1px solid var(--b1);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--t2);
+  transition: all .15s; flex-shrink: 0;
+}
+.email-lock-btn:hover { background: var(--adim); color: var(--a); border-color: var(--aglo); }
+.email-lock-btn.unlocked { background: var(--adim); color: var(--a); border-color: var(--aglo); }
+.email-lock-btn svg { width: 11px; height: 11px; }
+
+.locked-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: var(--s1);
+  border: 1px solid var(--b1);
+  border-radius: var(--r1);
+  font-size: .7rem;
+  font-weight: 500;
+  color: var(--t2);
+}
+.locked-badge svg { width: 12px; height: 12px; opacity: .6; flex-shrink: 0; }
+
+/* unlock animation */
+@keyframes unlockPop {
+  0%   { transform: scale(.95); opacity: 0; }
+  60%  { transform: scale(1.02); }
+  100% { transform: scale(1);    opacity: 1; }
+}
+#email-unlocked-view {
+  animation: unlockPop .25s var(--spring);
+}
+
+/* referenced by id, not class — kept here for completeness */
+#toasts { position:fixed; bottom:16px; right:16px; display:flex; flex-direction:column; gap:5px; z-index:2000; }
+.email-locked-view { margin-bottom: 8px; }
