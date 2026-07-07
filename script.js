@@ -12,6 +12,7 @@ let entries        = [];
 let editingId      = null;
 let dailySendTime  = '09:00';
 let managerEmail   = '';
+let managerEmails  = []; // multiple managers
 let ccEmails       = [];
 let isSending      = false;
 let activeFilter   = 'all';
@@ -140,7 +141,18 @@ async function loadSettings() {
     lucide.createIcons();
   }
   const sEmail=get('manager_email');
-  if (sEmail) { managerEmail=sEmail.value; if(mgrEmailEl) mgrEmailEl.value=managerEmail; }
+  if (sEmail) {
+    // Support both legacy single email and new comma-separated list
+    managerEmail=sEmail.value;
+    if(mgrEmailEl) mgrEmailEl.value=managerEmail;
+  }
+  const sEmails=get('manager_emails');
+  if (sEmails && sEmails.value) {
+    managerEmails=sEmails.value.split(',').map(e=>e.trim()).filter(Boolean);
+  } else if (managerEmail) {
+    managerEmails=[managerEmail]; // migrate legacy single email
+  }
+  renderManagerEmails();
   const sCC=get('cc_emails');
   if (sCC) { ccEmails=sCC.value?sCC.value.split(',').map(e=>e.trim()).filter(Boolean):[]; renderCcTags(); }
 }
@@ -172,9 +184,10 @@ async function saveSettings() {
     await Promise.all([
       supabaseClient.from('settings').upsert([{key:'send_time',value:newTime}],{onConflict:'key'}),
       supabaseClient.from('settings').upsert([{key:'manager_email',value:newEmail}],{onConflict:'key'}),
+      supabaseClient.from('settings').upsert([{key:'manager_emails',value:managerEmails.join(',')}],{onConflict:'key'}),
       supabaseClient.from('settings').upsert([{key:'cc_emails',value:newCC}],{onConflict:'key'}),
     ]);
-    dailySendTime=newTime; managerEmail=newEmail;
+    dailySendTime=newTime; managerEmail=managerEmails[0]||newEmail;
     toast('Settings saved','success');
     settingsModal.classList.remove('open');
   } catch { toast('Sync failed','error'); }
@@ -370,6 +383,51 @@ document.addEventListener('click',e=>{
 });
 
 // ═══════════════════════════
+//  CELL VALUE HELPERS (screen + email share same logic)
+// ═══════════════════════════
+function getCellValue(e, key) {
+  const {suppNo, vendorName} = extractSupplier(e.supplier);
+  const advCur = ((e.amount||0) * (e.advancePercent||0)) / 100;
+  const map = {
+    suppNo:        suppNo || '-',
+    supplier:      vendorName,
+    po:            e.po || '-',
+    amount:        (e.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}),
+    currency:      e.currency || '',
+    amountSar:     (e.amountSar||0).toLocaleString(),
+    advCur:        advCur.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}),
+    advanceAmount: (e.advanceAmount||0).toLocaleString(),
+    notes:         e.notes || '-',
+    date:          e.date || '',
+    description:   e.description || '-',
+    category:      e.category || '-',
+    status:        e.status === 'sent' ? 'Sent' : e.status === 'hold' ? 'On Hold' : 'Pending',
+    prSo:          e.prSo || '-',
+    woSo:          e.woSo || '-',
+  };
+  // Custom columns stored as extra_* in entry
+  if (key.startsWith('extra_')) return e[key] || '-';
+  return map[key] !== undefined ? map[key] : '-';
+}
+
+// For table cells (with HTML badges)
+function getCellHtml(e, key, tableType) {
+  if (key === 'status') {
+    if (e.status==='hold') return `<span class="sp hold">⏸ On Hold</span>`;
+    if (e.status==='sent') return `<span class="sp sent">Sent</span>`;
+    return `<span class="sp pending">Pending</span>`;
+  }
+  if (key === 'category') return e.category ? `<span class="cp">${e.category}</span>` : '-';
+  if (key === 'amountSar' || key === 'advanceAmount') return `<b>${getCellValue(e,key)}</b>`;
+  const val = getCellValue(e, key);
+  const truncKeys = ['supplier','notes','description'];
+  if (truncKeys.includes(key)) {
+    return `<span style="display:block;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${val}">${val}</span>`;
+  }
+  return val;
+}
+
+// ═══════════════════════════
 //  FILTER / SORT
 // ═══════════════════════════
 window.setFilter = function(f) {
@@ -472,30 +530,45 @@ function renderDashboard() {
   };
   const catBadge = c => c ? `<span class="cp">${c}</span>` : '-';
 
-  const emptyPo  = `<tr class="erow"><td colspan="13"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>${q?'No results':'No PO entries yet'}</p><span>${q?'Try a different search':'Fill the form and click Log Entry'}</span></div></td></tr>`;
-  const emptyAdv = `<tr class="erow"><td colspan="14"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>${q?'No results':'No advance entries yet'}</p><span>${q?'Try a different search':'Check "Advance?" when logging'}</span></div></td></tr>`;
+  // Column-driven rendering — respects visible cols from customizer
+  const visPo  = poCols.filter(c=>c.visible);
+  const visAdv = advCols.filter(c=>c.visible);
+  const colspan_po  = 2 + visPo.length;  // checkbox + cols + actions
+  const colspan_adv = 2 + visAdv.length;
+
+  // Update table headers dynamically
+  const poTable  = document.getElementById('po-table');
+  const advTable = document.getElementById('adv-table');
+  if (poTable) {
+    const sortableKeys = ['suppNo','supplier','po','amount','amountSar','date','status'];
+    poTable.querySelector('thead tr').innerHTML =
+      `<th style="width:28px"><input type="checkbox" id="selAllPo" onchange="toggleSelAll('po')"></th>` +
+      visPo.map(c=>`<th ${sortableKeys.includes(c.key)?`onclick="sortT('po','${c.key}')"`:''}>${c.label}</th>`).join('') +
+      `<th style="width:84px"></th>`;
+  }
+  if (advTable) {
+    const sortableKeys = ['suppNo','supplier','po','amount','advanceAmount','date','status'];
+    advTable.querySelector('thead tr').innerHTML =
+      `<th style="width:28px"><input type="checkbox" id="selAllAdv" onchange="toggleSelAll('advance')"></th>` +
+      visAdv.map(c=>`<th ${sortableKeys.includes(c.key)?`onclick="sortT('adv','${c.key}')"`:''}>${c.label}</th>`).join('') +
+      `<th style="width:84px"></th>`;
+  }
+
+  const emptyPo  = `<tr class="erow"><td colspan="${colspan_po}"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>${q?'No results':'No PO entries yet'}</p><span>${q?'Try a different search':'Fill the form and click Log Entry'}</span></div></td></tr>`;
+  const emptyAdv = `<tr class="erow"><td colspan="${colspan_adv}"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>${q?'No results':'No advance entries yet'}</p><span>${q?'Try a different search':'Check "Advance?" when logging'}</span></div></td></tr>`;
 
   if (poTbody) {
     poTbody.innerHTML = pos.length===0 ? emptyPo : pos.map(e=>{
       const {suppNo,vendorName}=extractSupplier(e.supplier);
       const rowCls=e.status==='hold'?' class="held-row"':'';
+      const cells = visPo.map(c=>`<td>${getCellHtml(e,c.key,'po')}</td>`).join('');
       return `<tr${rowCls} style="${e.status==='sent'?'opacity:.5':''}">
         <td><input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()"></td>
-        <td>${suppNo||'-'}</td>
-        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${vendorName}">${vendorName}</td>
-        <td>${e.po||'-'}</td>
-        <td>${(e.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        <td>${e.currency||''}</td>
-        <td style="font-weight:600">${(e.amountSar||0).toLocaleString()}</td>
-        <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t1)" title="${e.notes||''}">${e.notes||'-'}</td>
-        <td style="color:var(--t1)">${e.date||''}</td>
-        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t1)" title="${e.description||''}">${e.description||'-'}</td>
-        <td>${catBadge(e.category)}</td>
-        <td>${badge(e)}</td>
+        ${cells}
         <td><div class="row-acts">
           ${e.status!=='sent'?`<button class="ra" onclick="startEdit('${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>`:''}
           <button class="ra reuse"   onclick="reuseEntry('${e.id}')" title="Reuse as new"><i data-lucide="copy-plus"></i></button>
-          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release — include in dispatch':'Hold — exclude from dispatch'}">
+          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release':'Hold'}">
             <i data-lucide="${e.on_hold?'play-circle':'pause-circle'}"></i>
           </button>
           <button class="ra del" onclick="deleteEntry('${e.id}')" title="Delete"><i data-lucide="trash-2"></i></button>
@@ -507,26 +580,15 @@ function renderDashboard() {
   if (advTbody) {
     advTbody.innerHTML = advs.length===0 ? emptyAdv : advs.map(e=>{
       const {suppNo,vendorName}=extractSupplier(e.supplier);
-      const advCur=((e.amount||0)*(e.advancePercent||0))/100;
       const rowCls=e.status==='hold'?' class="held-row"':'';
+      const cells = visAdv.map(c=>`<td>${getCellHtml(e,c.key,'adv')}</td>`).join('');
       return `<tr${rowCls} style="${e.status==='sent'?'opacity:.5':''}">
         <td><input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()"></td>
-        <td>${suppNo||'-'}</td>
-        <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${vendorName}">${vendorName}</td>
-        <td>${e.po||'-'}</td>
-        <td>${(e.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        <td>${e.currency||''}</td>
-        <td>${advCur.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        <td style="font-weight:600">${(e.advanceAmount||0).toLocaleString()}</td>
-        <td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t1)" title="${e.notes||''}">${e.notes||'-'}</td>
-        <td style="color:var(--t1)">${e.date||''}</td>
-        <td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t1)" title="${e.description||''}">${e.description||'-'}</td>
-        <td>${catBadge(e.category)}</td>
-        <td>${badge(e)}</td>
+        ${cells}
         <td><div class="row-acts">
           ${e.status!=='sent'?`<button class="ra" onclick="startEdit('${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>`:''}
           <button class="ra reuse"   onclick="reuseEntry('${e.id}')" title="Reuse as new"><i data-lucide="copy-plus"></i></button>
-          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release — include in dispatch':'Hold — exclude from dispatch'}">
+          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release':'Hold'}">
             <i data-lucide="${e.on_hold?'play-circle':'pause-circle'}"></i>
           </button>
           <button class="ra del" onclick="deleteEntry('${e.id}')" title="Delete"><i data-lucide="trash-2"></i></button>
@@ -622,21 +684,29 @@ async function openDispatchPreview() {
   const totalPo=pos.reduce((s,e)=>s+(e.amountSar||0),0);
   const totalAdv=advs.reduce((s,e)=>s+(e.advanceAmount||0),0);
 
-  const th=s=>`<th>${s}</th>`;
   const ts='border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;margin-bottom:14px';
-  const ths='background:#f8fafc;color:#0f172a;';
+  const ths='background:#f8fafc;color:#0f172a;padding:5px 7px;border:1px solid #e2e8f0;text-align:left';
+  const tds='padding:5px 7px;border:1px solid #e2e8f0;vertical-align:top';
+  const visPo  = poCols.filter(c=>c.visible && c.key!=='status');
+  const visAdv = advCols.filter(c=>c.visible && c.key!=='status');
   let html='';
   if (pos.length) {
+    const hdrs=[...visPo.map(c=>`<th style="${ths}">${c.label}</th>`),`<th style="${ths}">Status</th>`].join('');
     html+=`<div class="preview-count"><i data-lucide="file-text"></i> ${pos.length} PO Approval${pos.length!==1?'s':''} · Total SAR: <b>${totalPo.toLocaleString()}</b></div>`;
-    html+=`<table border="1" cellpadding="6" style="${ts}"><tr style="${ths}">${['Supp.','Vendor','PO #','Description','Amount','Cur','SAR ⃁','Notes'].map(th).join('')}</tr>`;
-    pos.forEach(e=>{const{suppNo,vendorName}=extractSupplier(e.supplier);html+=`<tr><td>${suppNo||'-'}</td><td>${vendorName}</td><td>${e.po||'-'}</td><td>${e.description||'-'}</td><td>${(e.amount||0).toLocaleString()}</td><td>${e.currency||''}</td><td><b>${(e.amountSar||0).toLocaleString()}</b></td><td>${e.notes||'-'}</td></tr>`;});
-    html+='</table>';
+    html+=`<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
+    pos.forEach(e=>{
+      html+='<tr>'+[...visPo.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),`<td style="${tds}">Pending</td>`].join('')+'</tr>';
+    });
+    html+='</tbody></table>';
   }
   if (advs.length) {
+    const hdrs=[...visAdv.map(c=>`<th style="${ths}">${c.label}</th>`),`<th style="${ths}">Status</th>`].join('');
     html+=`<div class="preview-count" style="margin-top:10px"><i data-lucide="landmark"></i> ${advs.length} Advance${advs.length!==1?'s':''} · Total SAR: <b>${totalAdv.toLocaleString()}</b></div>`;
-    html+=`<table border="1" cellpadding="6" style="${ts}"><tr style="${ths}">${['Supp.','Vendor','PO #','Description','PO Amt','Cur','Adv (Cur)','Adv SAR'].map(th).join('')}</tr>`;
-    advs.forEach(e=>{const{suppNo,vendorName}=extractSupplier(e.supplier);const ac=((e.amount||0)*(e.advancePercent||0))/100;html+=`<tr><td>${suppNo||'-'}</td><td>${vendorName}</td><td>${e.po||'-'}</td><td>${e.description||'-'}</td><td>${(e.amount||0).toLocaleString()}</td><td>${e.currency||''}</td><td><b>${ac.toLocaleString()}</b></td><td><b>${(e.advanceAmount||0).toLocaleString()}</b></td></tr>`;});
-    html+='</table>';
+    html+=`<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
+    advs.forEach(e=>{
+      html+='<tr>'+[...visAdv.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),`<td style="${tds}">Pending</td>`].join('')+'</tr>';
+    });
+    html+='</tbody></table>';
   }
 
   document.getElementById('preview-content').innerHTML=html;
@@ -675,26 +745,48 @@ async function sendEmail(isScheduled=false) {
     const pos=pending.filter(e=>!e.advanceAmount||e.advanceAmount===0);
     const advs=pending.filter(e=>e.advanceAmount>0);
     const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
-    const th=s=>`<th>${s}</th>`;
     const ts='border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;';
-    const ths='background:#f8fafc;color:#0f172a;';
+    const ths='background:#f8fafc;color:#0f172a;padding:6px 8px;border:1px solid #e2e8f0;text-align:left;';
+    const tds='padding:6px 8px;border:1px solid #e2e8f0;vertical-align:top;';
+
+    // Use same column config as screen — only visible cols, in same order
+    const visPo  = poCols.filter(c=>c.visible && c.key!=='status');  // status added separately at end
+    const visAdv = advCols.filter(c=>c.visible && c.key!=='status');
+
     let poH='', advH='';
     if (pos.length) {
-      poH=`<h3 style="font-family:sans-serif">📅 PO Approvals (${pos.length}):</h3><table border="1" cellpadding="8" style="${ts}"><tr style="${ths}">${['Supp.','Vendor','PO #','Description','Amount','Cur','SAR ⃁','Notes'].map(th).join('')}</tr>`;
-      pos.forEach(e=>{const{suppNo,vendorName}=extractSupplier(e.supplier);poH+=`<tr><td>${suppNo||'-'}</td><td>${vendorName}</td><td>${e.po||'-'}</td><td>${e.description||'-'}</td><td>${(e.amount||0).toLocaleString()}</td><td>${e.currency||''}</td><td><b>${(e.amountSar||0).toLocaleString()}</b></td><td>${e.notes||'-'}</td></tr>`;});
-      poH+='</table>';
+      const hdrs = [...visPo.map(c=>c.label), 'Status'].map(h=>`<th style="${ths}">${h}</th>`).join('');
+      poH = `<h3 style="font-family:sans-serif;margin:14px 0 6px">📅 PO Approvals (${pos.length})</h3>`;
+      poH += `<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
+      pos.forEach(e=>{
+        const cells = [...visPo.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),
+                       `<td style="${tds}">${getCellValue(e,'status')}</td>`].join('');
+        poH += `<tr>${cells}</tr>`;
+      });
+      poH += '</tbody></table>';
     }
     if (advs.length) {
-      advH=`<h3 style="font-family:sans-serif">💰 Advances (${advs.length}):</h3><table border="1" cellpadding="8" style="${ts}"><tr style="${ths}">${['Supp.','Vendor','PO #','Description','PO Amt','Cur','Adv (Cur)','Adv SAR'].map(th).join('')}</tr>`;
-      advs.forEach(e=>{const{suppNo,vendorName}=extractSupplier(e.supplier);const ac=((e.amount||0)*(e.advancePercent||0))/100;advH+=`<tr><td>${suppNo||'-'}</td><td>${vendorName}</td><td>${e.po||'-'}</td><td>${e.description||'-'}</td><td>${(e.amount||0).toLocaleString()}</td><td>${e.currency||''}</td><td><b>${ac.toLocaleString()}</b></td><td><b>${(e.advanceAmount||0).toLocaleString()}</b></td></tr>`;});
-      advH+='</table>';
+      const hdrs = [...visAdv.map(c=>c.label), 'Status'].map(h=>`<th style="${ths}">${h}</th>`).join('');
+      advH = `<h3 style="font-family:sans-serif;margin:14px 0 6px">💰 Advance Payments (${advs.length})</h3>`;
+      advH += `<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
+      advs.forEach(e=>{
+        const cells = [...visAdv.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),
+                       `<td style="${tds}">${getCellValue(e,'status')}</td>`].join('');
+        advH += `<tr>${cells}</tr>`;
+      });
+      advH += '</tbody></table>';
     }
     const totalPo=pos.reduce((s,e)=>s+(e.amountSar||0),0);
     const totalAdv=advs.reduce((s,e)=>s+(e.advanceAmount||0),0);
 
+    // Send to all manager emails — primary gets to_email, rest go to CC
+    const primaryMgr = managerEmails[0] || managerEmail;
+    const extraMgrs  = managerEmails.slice(1);
+    const allCC      = [...extraMgrs, ...ccEmails].join(', ');
+
     await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
       subject_line:`GM Procurement Approval Request - ${today}`,
-      to_email:managerEmail, cc_email:ccEmails.join(', '),
+      to_email:primaryMgr, cc_email:allCC,
       po_table:poH, adv_table:advH,
       summary_count:pending.length, po_count:pos.length, adv_count:advs.length,
       total_po_sar:totalPo.toLocaleString(), total_adv_sar:totalAdv.toLocaleString(),
@@ -1034,6 +1126,9 @@ document.getElementById('btn-close-weekly')?.addEventListener('click',()=>docume
 document.getElementById('new-cc-input')?.addEventListener('keydown',e=>{
   if(e.key==='Enter'||e.key===','){e.preventDefault();addCcFromInput();}
 });
+document.getElementById('new-mgr-input')?.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();addManagerEmail();}
+});
 
 // Close modals on backdrop click
 document.querySelectorAll('.mo').forEach(m=>{
@@ -1046,3 +1141,311 @@ document.querySelectorAll('.mo').forEach(m=>{
 setupLayout();
 setupEmailLockListeners();
 init();
+
+// ═══════════════════════════
+//  SETTINGS TABS
+// ═══════════════════════════
+window.switchSettingsTab = function(tab) {
+  document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  document.querySelectorAll('.stab-panel').forEach(p => p.style.display = 'none');
+  const panel = document.getElementById('stab-' + tab);
+  if (panel) panel.style.display = 'block';
+  if (tab === 'status') runStatusChecks();
+  if (tab === 'columns') renderColumnGrids();
+};
+
+// ═══════════════════════════
+//  MULTIPLE MANAGER EMAILS
+// ═══════════════════════════
+function renderManagerEmails() {
+  // Settings modal list
+  const list = document.getElementById('mgr-emails-list');
+  if (list) {
+    if (!managerEmails.length) {
+      list.innerHTML = '<div class="mgr-empty">No manager emails added yet</div>';
+    } else {
+      list.innerHTML = managerEmails.map((e, i) => `
+        <div class="mgr-item">
+          <span class="mgr-item-email" title="${e}">${e}</span>
+          ${i === 0 ? '<span class="mgr-item-primary">Primary</span>' : ''}
+          <button class="mgr-item-del" onclick="removeManagerEmail(${i})" title="Remove">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>`).join('');
+    }
+  }
+
+  // Sidebar display
+  const sidebar = document.getElementById('mgr-emails-sidebar');
+  if (sidebar) {
+    if (!managerEmails.length) {
+      sidebar.innerHTML = '<div style="font-size:.72rem;color:var(--t2)">No managers configured</div>';
+    } else {
+      sidebar.innerHTML = managerEmails.map(e => `
+        <div class="mgr-sidebar-item">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e}</span>
+        </div>`).join('');
+    }
+  }
+}
+
+window.addManagerEmail = function() {
+  const input = document.getElementById('new-mgr-input');
+  const val = input?.value.trim();
+  if (!val || !val.includes('@')) return toast('Enter a valid email', 'info');
+  if (managerEmails.includes(val)) return toast('Already added', 'info');
+  managerEmails.push(val);
+  if (input) input.value = '';
+  renderManagerEmails();
+  // Auto-save to DB
+  if (supabaseClient) {
+    supabaseClient.from('settings').upsert([{key:'manager_emails', value:managerEmails.join(',')}],{onConflict:'key'})
+      .then(() => toast('Manager email added','success'))
+      .catch(() => toast('Save failed','error'));
+  }
+};
+
+window.removeManagerEmail = function(i) {
+  managerEmails.splice(i, 1);
+  renderManagerEmails();
+  if (supabaseClient) {
+    supabaseClient.from('settings').upsert([{key:'manager_emails', value:managerEmails.join(',')}],{onConflict:'key'})
+      .catch(() => {});
+  }
+};
+
+// ═══════════════════════════
+//  COLUMN CUSTOMIZER
+// ═══════════════════════════
+const PO_COLS_DEFAULT = [
+  {key:'suppNo',    label:'Supp. No.',   visible:true},
+  {key:'supplier',  label:'Vendor',      visible:true},
+  {key:'po',        label:'PO #',        visible:true},
+  {key:'amount',    label:'Amount',      visible:true},
+  {key:'currency',  label:'Cur',         visible:true},
+  {key:'amountSar', label:'SAR ⃁',      visible:true},
+  {key:'notes',     label:'Notes',       visible:true},
+  {key:'date',      label:'Date',        visible:true},
+  {key:'description',label:'Description',visible:true},
+  {key:'category',  label:'Category',    visible:true},
+  {key:'status',    label:'Status',      visible:true},
+];
+
+const ADV_COLS_DEFAULT = [
+  {key:'suppNo',        label:'Supp. No.',   visible:true},
+  {key:'supplier',      label:'Vendor',      visible:true},
+  {key:'po',            label:'PO #',        visible:true},
+  {key:'amount',        label:'PO Amt',      visible:true},
+  {key:'currency',      label:'Cur',         visible:true},
+  {key:'advCur',        label:'Adv (Cur)',   visible:true},
+  {key:'advanceAmount', label:'Adv SAR ⃁',  visible:true},
+  {key:'notes',         label:'Notes',       visible:true},
+  {key:'date',          label:'Date',        visible:true},
+  {key:'description',   label:'Description', visible:true},
+  {key:'category',      label:'Category',    visible:true},
+  {key:'status',        label:'Status',      visible:true},
+];
+
+let poCols  = loadColConfig('po_cols',  PO_COLS_DEFAULT);
+let advCols = loadColConfig('adv_cols', ADV_COLS_DEFAULT);
+
+function loadColConfig(key, defaults) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key));
+    if (saved && Array.isArray(saved)) return saved;
+  } catch {}
+  return defaults.map(c => ({...c}));
+}
+
+function renderColumnGrids() {
+  renderColGrid('col-grid-po',  poCols,  'po');
+  renderColGrid('col-grid-adv', advCols, 'adv');
+}
+
+function renderColGrid(gridId, cols, tableKey) {
+  const grid = document.getElementById(gridId); if (!grid) return;
+  grid.innerHTML = cols.map((col, i) => `
+    <div class="col-item" draggable="true" data-idx="${i}" data-table="${tableKey}"
+      ondragstart="colDragStart(event)" ondragover="colDragOver(event)" ondrop="colDrop(event)">
+      <input type="checkbox" ${col.visible ? 'checked' : ''} onchange="toggleColVisible('${tableKey}',${i},this.checked)">
+      <span class="col-item-name">${col.label}${col.custom?'<span style="font-size:.58rem;color:var(--a);margin-left:3px">custom</span>':''}</span>
+      ${col.custom ? `<button onclick="removeCustomCol('${tableKey}',${i})" style="background:none;border:none;cursor:pointer;color:var(--t2);padding:0;display:flex;align-items:center;" title="Remove column"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` :
+      `<span class="col-drag-handle"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="18"/></svg></span>`}
+    </div>`).join('');
+}
+
+window.removeCustomCol = function(tableKey, idx) {
+  const cols = tableKey === 'po' ? poCols : advCols;
+  cols.splice(idx, 1);
+  renderColGrid(tableKey === 'po' ? 'col-grid-po' : 'col-grid-adv', cols, tableKey);
+};
+
+let dragSrcIdx = null, dragSrcTable = null;
+
+window.colDragStart = function(e) {
+  dragSrcIdx   = parseInt(e.currentTarget.dataset.idx);
+  dragSrcTable = e.currentTarget.dataset.table;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+};
+
+window.colDragOver = function(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.col-item').forEach(el => el.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+};
+
+window.colDrop = function(e) {
+  e.preventDefault();
+  document.querySelectorAll('.col-item').forEach(el => el.classList.remove('dragging','drag-over'));
+  const destIdx   = parseInt(e.currentTarget.dataset.idx);
+  const destTable = e.currentTarget.dataset.table;
+  if (destTable !== dragSrcTable || dragSrcIdx === destIdx) return;
+  const cols = dragSrcTable === 'po' ? poCols : advCols;
+  const [moved] = cols.splice(dragSrcIdx, 1);
+  cols.splice(destIdx, 0, moved);
+  renderColGrid(dragSrcTable === 'po' ? 'col-grid-po' : 'col-grid-adv', cols, dragSrcTable);
+};
+
+window.toggleColVisible = function(tableKey, idx, visible) {
+  const cols = tableKey === 'po' ? poCols : advCols;
+  cols[idx].visible = visible;
+};
+
+window.saveColumns = function() {
+  localStorage.setItem('po_cols',  JSON.stringify(poCols));
+  localStorage.setItem('adv_cols', JSON.stringify(advCols));
+  renderDashboard();
+  toast('Column layout saved', 'success');
+};
+
+window.resetColumns = function() {
+  poCols  = PO_COLS_DEFAULT.map(c=>({...c}));
+  advCols = ADV_COLS_DEFAULT.map(c=>({...c}));
+  localStorage.removeItem('po_cols');
+  localStorage.removeItem('adv_cols');
+  renderColumnGrids();
+  renderDashboard();
+  toast('Columns reset to default', 'info');
+};
+
+// ═══════════════════════════
+//  SYSTEM STATUS CHECKS
+// ═══════════════════════════
+window.runStatusChecks = async function() {
+  const container = document.getElementById('status-checks');
+  if (!container) return;
+
+  const checks = [
+    { label: 'Supabase Connection',     run: checkSupabase },
+    { label: 'Manager Email',           run: checkManagerEmail },
+    { label: 'EmailJS Configuration',   run: checkEmailJS },
+    { label: 'Auto-Dispatch Schedule',  run: checkScheduleConfig },
+    { label: 'Pending Entries',         run: checkPendingEntries },
+    { label: 'On Hold Entries',         run: checkHoldEntries },
+    { label: 'Database — entries table',run: checkEntriesTable },
+  ];
+
+  // Show spinners
+  container.innerHTML = checks.map(c => `
+    <div class="status-item">
+      <div class="status-icon spin-icon"><svg class="spin" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>
+      <div class="status-body"><div class="status-label">${c.label}</div><div class="status-detail">Checking…</div></div>
+    </div>`).join('');
+
+  // Run all checks in parallel
+  const results = await Promise.allSettled(checks.map(c => c.run()));
+
+  container.innerHTML = results.map((r, i) => {
+    const res = r.status === 'fulfilled' ? r.value : { status: 'fail', detail: r.reason?.message || 'Error' };
+    const iconMap = {
+      ok:   `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
+      warn: `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      fail: `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    };
+    return `
+      <div class="status-item">
+        <div class="status-icon ${res.status}">${iconMap[res.status]||iconMap.fail}</div>
+        <div class="status-body">
+          <div class="status-label">${checks[i].label}</div>
+          <div class="status-detail">${res.detail}</div>
+        </div>
+      </div>`;
+  }).join('');
+};
+
+async function checkSupabase() {
+  if (!supabaseClient) return { status:'fail', detail:'Not connected. Enter Supabase URL and Key in Connection tab.' };
+  const {error} = await supabaseClient.from('settings').select('key').limit(1);
+  if (error) return { status:'fail', detail:'Connection error: ' + error.message };
+  return { status:'ok', detail:'Connected to Supabase successfully.' };
+}
+
+async function checkManagerEmail() {
+  if (!managerEmails.length && !managerEmail) return { status:'fail', detail:'No manager email configured. Add one in the Email tab.' };
+  const count = managerEmails.length || 1;
+  const primary = managerEmails[0] || managerEmail;
+  return { status:'ok', detail:`${count} manager email${count>1?'s':''} configured. Primary: ${primary}` };
+}
+
+async function checkEmailJS() {
+  if (!EMAILJS_SERVICE_ID) return { status:'fail', detail:'EmailJS Service ID missing. Add it in Connection tab.' };
+  if (!EMAILJS_TEMPLATE_ID) return { status:'fail', detail:'EmailJS Template ID missing. Add it in Connection tab.' };
+  if (!EMAILJS_PUBLIC_KEY)  return { status:'fail', detail:'EmailJS Public Key missing. Add it in Connection tab.' };
+  if (typeof emailjs === 'undefined') return { status:'fail', detail:'EmailJS library not loaded. Check your internet connection.' };
+  return { status:'ok', detail:`Service: ${EMAILJS_SERVICE_ID} · Template: ${EMAILJS_TEMPLATE_ID}` };
+}
+
+async function checkScheduleConfig() {
+  if (!dailySendTime || dailySendTime === '09:00') return { status:'warn', detail:`Auto-dispatch set to ${dailySendTime}. Change in Connection tab if needed.` };
+  return { status:'ok', detail:`Auto-dispatch scheduled at ${dailySendTime} daily.` };
+}
+
+async function checkPendingEntries() {
+  const pending = entries.filter(e => e.status === 'pending');
+  if (!pending.length) return { status:'warn', detail:'No pending entries to dispatch.' };
+  const sarTotal = pending.reduce((s,e) => s + (e.advanceAmount > 0 ? (e.advanceAmount||0) : (e.amountSar||0)), 0);
+  return { status:'ok', detail:`${pending.length} pending entries · Total: ${sarTotal.toLocaleString()} SAR ⃁` };
+}
+
+async function checkHoldEntries() {
+  const held = entries.filter(e => e.status === 'hold');
+  if (!held.length) return { status:'ok', detail:'No entries currently on hold.' };
+  return { status:'warn', detail:`${held.length} entr${held.length>1?'ies':'y'} on hold — these will NOT be dispatched.` };
+}
+
+async function checkEntriesTable() {
+  if (!supabaseClient) return { status:'fail', detail:'Not connected.' };
+  const {data, error} = await supabaseClient.from('entries').select('id').limit(1);
+  if (error) return { status:'fail', detail:'Cannot read entries table: ' + error.message };
+  const hasHold = entries.length === 0 || entries[0].hasOwnProperty('on_hold');
+  if (!hasHold) return { status:'warn', detail:'Table found but "on_hold" column may be missing. Run: ALTER TABLE entries ADD COLUMN IF NOT EXISTS on_hold boolean DEFAULT false;' };
+  return { status:'ok', detail:`Entries table accessible. ${entries.length} total records.` };
+}
+
+// ═══════════════════════════
+//  ADD CUSTOM COLUMN
+// ═══════════════════════════
+window.addCustomColumn = function() {
+  const label = document.getElementById('new-col-label')?.value.trim();
+  const target = document.getElementById('new-col-table')?.value || 'po';
+  if (!label) return toast('Enter a column label first', 'info');
+
+  // Generate a safe key from the label
+  const key = 'extra_' + label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+  const newCol = { key, label, visible: true, custom: true };
+
+  if (target === 'po' || target === 'both') {
+    if (!poCols.find(c => c.key === key)) poCols.push({...newCol});
+  }
+  if (target === 'adv' || target === 'both') {
+    if (!advCols.find(c => c.key === key)) advCols.push({...newCol});
+  }
+
+  document.getElementById('new-col-label').value = '';
+  renderColumnGrids();
+  toast(`Column "${label}" added — click Apply & Save`, 'success');
+};

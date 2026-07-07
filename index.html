@@ -35,14 +35,12 @@
 
         <!-- UNLOCKED STATE (hidden by default) -->
         <div id="email-unlocked-view" style="display:none">
-          <div class="sf"><label>Manager Email</label><input type="email" id="input-manager-email" placeholder="manager@example.com"></div>
           <div class="sf">
-            <label>CC Recipients</label>
-            <div class="tag-wrap" id="cc-tags-container">
-              <div class="tags-list" id="cc-tags-list"></div>
-              <input type="text" id="new-cc-input" placeholder="Add & press Enter…">
-              <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
-            </div>
+            <label>Manager Emails</label>
+            <div id="mgr-emails-sidebar" class="mgr-sidebar-list"></div>
+            <button class="btn btn-ghost fw" style="margin-top:4px;font-size:.7rem;padding:4px 8px" onclick="switchSettingsTab('email');document.getElementById('settings-modal').classList.add('open')">
+              <i data-lucide="edit-3"></i> Edit in Settings
+            </button>
           </div>
         </div>
 
@@ -290,22 +288,90 @@
 
 <!-- MODALS -->
 <div id="settings-modal" class="mo">
-  <div class="modal">
-    <div class="mhd"><h3><i data-lucide="settings"></i> Settings</h3><button class="btn-x" id="btn-close-settings">&times;</button></div>
-    <div class="mbody">
+  <div class="modal settings-modal-wide">
+
+    <!-- Header -->
+    <div class="mhd">
+      <h3><i data-lucide="settings"></i> Settings</h3>
+      <button class="btn-x" id="btn-close-settings">&times;</button>
+    </div>
+
+    <!-- Tab nav -->
+    <div class="stab-nav">
+      <button class="stab on" data-tab="connection"  onclick="switchSettingsTab('connection')"><i data-lucide="database"></i> Connection</button>
+      <button class="stab"    data-tab="email"       onclick="switchSettingsTab('email')"><i data-lucide="mail"></i> Email</button>
+      <button class="stab"    data-tab="columns"     onclick="switchSettingsTab('columns')"><i data-lucide="columns-3"></i> Columns</button>
+      <button class="stab"    data-tab="status"      onclick="switchSettingsTab('status')"><i data-lucide="activity"></i> Status</button>
+    </div>
+
+    <!-- TAB: Connection -->
+    <div class="stab-panel" id="stab-connection">
       <div class="sf"><label>Supabase Project URL</label><input type="text" id="input-db-url" placeholder="https://your-project.supabase.co"></div>
-      <div class="sf"><label>Database Key (anon)</label><input type="password" id="input-db-key" placeholder="Paste anon key…"></div>
+      <div class="sf"><label>Database Key (anon public)</label><input type="password" id="input-db-key" placeholder="Paste anon key…"></div>
       <div class="sf"><label>Auto-Send Time (24h)</label><input type="time" id="input-send-time"></div>
-      <div class="sdiv">EmailJS</div>
+      <div class="sdiv">EmailJS Configuration</div>
       <div class="sf"><label>Service ID</label><input type="text" id="input-emailjs-svc" placeholder="service_xxxxx"></div>
       <div class="sf"><label>Template ID</label><input type="text" id="input-emailjs-tpl" placeholder="template_xxxxx"></div>
       <div class="sf"><label>Public Key</label><input type="password" id="input-emailjs-pub" placeholder="Public key…"></div>
       <div class="macts">
-        <button id="btn-export"       class="btn btn-ghost fw"><i data-lucide="file-spreadsheet"></i> Export to Excel</button>
-        <button id="btn-finalize"     class="btn btn-pri fw"><i data-lucide="send"></i> Preview & Dispatch Now</button>
-        <button id="btn-save-settings" class="btn btn-sec fw">Save Settings</button>
+        <button id="btn-save-settings" class="btn btn-pri fw"><i data-lucide="save"></i> Save Settings</button>
       </div>
     </div>
+
+    <!-- TAB: Email & Recipients -->
+    <div class="stab-panel" id="stab-email" style="display:none">
+      <div class="sdiv" style="margin-top:0;padding-top:0;border:none">Manager Emails <span class="sdiv-hint">All will receive the dispatch email</span></div>
+      <div id="mgr-emails-list" class="mgr-list"></div>
+      <div class="mgr-add-row">
+        <input type="email" id="new-mgr-input" placeholder="Add manager email & press Enter…" onkeydown="if(event.key==='Enter'){event.preventDefault();addManagerEmail()}">
+        <button class="btn btn-ghost" onclick="addManagerEmail()"><i data-lucide="plus"></i> Add</button>
+      </div>
+      <div class="sdiv">CC Recipients</div>
+      <div class="tag-wrap" id="cc-tags-container" style="margin-bottom:6px">
+        <div class="tags-list" id="cc-tags-list"></div>
+        <input type="text" id="new-cc-input" placeholder="Add & press Enter…">
+        <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
+      </div>
+      <p style="font-size:.67rem;color:var(--t2);margin-top:4px">CC emails are copied on every dispatch. Manager emails receive the email directly.</p>
+      <div class="macts">
+        <button id="btn-export"   class="btn btn-ghost fw"><i data-lucide="file-spreadsheet"></i> Export to Excel</button>
+        <button id="btn-finalize" class="btn btn-pri fw"><i data-lucide="send"></i> Preview & Dispatch Now</button>
+      </div>
+    </div>
+
+    <!-- TAB: Customize Columns -->
+    <div class="stab-panel" id="stab-columns" style="display:none">
+      <p class="stab-desc">Choose which columns are visible in each table. Drag to reorder.</p>
+      <div class="sdiv" style="margin-top:8px;padding-top:0;border:none">PO Approvals Table</div>
+      <div class="col-grid" id="col-grid-po"></div>
+      <div class="sdiv">Advance Payments Table</div>
+      <div class="col-grid" id="col-grid-adv"></div>
+      <div class="sdiv">Add Custom Column</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input type="text" id="new-col-label" placeholder="Column label (e.g. Contract #)" style="flex:2;padding:6px 9px;background:var(--s1);border:1px solid var(--b1);border-radius:var(--r1);color:var(--t0);font-size:.8rem;font-family:inherit;outline:none">
+        <select id="new-col-table" style="flex:1;padding:6px 9px;background:var(--s1);border:1px solid var(--b1);border-radius:var(--r1);color:var(--t0);font-size:.8rem;font-family:inherit;outline:none">
+          <option value="po">PO Table</option>
+          <option value="adv">Advance Table</option>
+          <option value="both">Both</option>
+        </select>
+        <button class="btn btn-ghost" onclick="addCustomColumn()"><i data-lucide="plus"></i> Add</button>
+      </div>
+      <p style="font-size:.67rem;color:var(--t2);margin-bottom:10px">Custom columns appear in the table and email. You can fill values when editing each entry.</p>
+      <div class="macts">
+        <button onclick="resetColumns()" class="btn btn-ghost fw"><i data-lucide="rotate-ccw"></i> Reset to Default</button>
+        <button onclick="saveColumns()" class="btn btn-pri fw"><i data-lucide="save"></i> Apply & Save</button>
+      </div>
+    </div>
+
+    <!-- TAB: System Status -->
+    <div class="stab-panel" id="stab-status" style="display:none">
+      <p class="stab-desc">Run checks before dispatching to ensure everything is configured correctly.</p>
+      <div id="status-checks" class="status-checks"></div>
+      <div class="macts" style="margin-top:16px">
+        <button onclick="runStatusChecks()" class="btn btn-pri fw"><i data-lucide="refresh-cw"></i> Run Checks</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
