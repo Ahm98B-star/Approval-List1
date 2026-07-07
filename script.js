@@ -155,6 +155,9 @@ async function loadSettings() {
   renderManagerEmails();
   const sCC=get('cc_emails');
   if (sCC) { ccEmails=sCC.value?sCC.value.split(',').map(e=>e.trim()).filter(Boolean):[]; renderCcTags(); }
+
+  // Load column config from Supabase (shared across all team members)
+  loadColsFromSettings(data);
 }
 
 async function saveSettings() {
@@ -1283,15 +1286,48 @@ const ADV_COLS_DEFAULT = [
   {key:'status',        label:'Status',      visible:true},
 ];
 
-let poCols  = loadColConfig('po_cols',  PO_COLS_DEFAULT);
-let advCols = loadColConfig('adv_cols', ADV_COLS_DEFAULT);
+let poCols  = PO_COLS_DEFAULT.map(c=>({...c}));
+let advCols = ADV_COLS_DEFAULT.map(c=>({...c}));
 
-function loadColConfig(key, defaults) {
+function parseColConfig(json, defaults) {
   try {
-    const saved = JSON.parse(localStorage.getItem(key));
-    if (saved && Array.isArray(saved)) return saved;
+    const saved = JSON.parse(json);
+    if (saved && Array.isArray(saved) && saved.length > 0) {
+      // Merge: keep saved order/visibility, add any new defaults not yet in saved
+      const savedKeys = new Set(saved.map(c=>c.key));
+      const merged = [...saved];
+      defaults.forEach(d => { if (!savedKeys.has(d.key)) merged.push({...d}); });
+      return merged;
+    }
   } catch {}
-  return defaults.map(c => ({...c}));
+  return defaults.map(c=>({...c}));
+}
+
+function loadColsFromSettings(settingsData) {
+  const get = k => settingsData?.find(i=>i.key===k);
+  const po  = get('col_config_po');
+  const adv = get('col_config_adv');
+  if (po)  poCols  = parseColConfig(po.value,  PO_COLS_DEFAULT);
+  if (adv) advCols = parseColConfig(adv.value, ADV_COLS_DEFAULT);
+  // Also migrate any old localStorage config on first load
+  if (!po && !adv) {
+    try {
+      const lsPo  = localStorage.getItem('po_cols');
+      const lsAdv = localStorage.getItem('adv_cols');
+      if (lsPo)  poCols  = parseColConfig(lsPo,  PO_COLS_DEFAULT);
+      if (lsAdv) advCols = parseColConfig(lsAdv, ADV_COLS_DEFAULT);
+      // Push migrated config to Supabase so teammates get it too
+      if ((lsPo || lsAdv) && supabaseClient) {
+        supabaseClient.from('settings').upsert([
+          {key:'col_config_po',  value: JSON.stringify(poCols)},
+          {key:'col_config_adv', value: JSON.stringify(advCols)},
+        ], {onConflict:'key'}).then(()=>{
+          localStorage.removeItem('po_cols');
+          localStorage.removeItem('adv_cols');
+        });
+      }
+    } catch {}
+  }
 }
 
 function renderColumnGrids() {
@@ -1350,21 +1386,37 @@ window.toggleColVisible = function(tableKey, idx, visible) {
   cols[idx].visible = visible;
 };
 
-window.saveColumns = function() {
-  localStorage.setItem('po_cols',  JSON.stringify(poCols));
-  localStorage.setItem('adv_cols', JSON.stringify(advCols));
-  renderDashboard();
-  toast('Column layout saved', 'success');
+window.saveColumns = async function() {
+  if (!supabaseClient) {
+    toast('Not connected to database', 'error');
+    return;
+  }
+  try {
+    await supabaseClient.from('settings').upsert([
+      {key:'col_config_po',  value: JSON.stringify(poCols)},
+      {key:'col_config_adv', value: JSON.stringify(advCols)},
+    ], {onConflict:'key'});
+    renderDashboard();
+    toast('Column layout saved — visible to all team members', 'success');
+  } catch(err) {
+    toast('Save failed: ' + (err.message||err), 'error');
+  }
 };
 
-window.resetColumns = function() {
+window.resetColumns = async function() {
   poCols  = PO_COLS_DEFAULT.map(c=>({...c}));
   advCols = ADV_COLS_DEFAULT.map(c=>({...c}));
   localStorage.removeItem('po_cols');
   localStorage.removeItem('adv_cols');
+  if (supabaseClient) {
+    await supabaseClient.from('settings').upsert([
+      {key:'col_config_po',  value: JSON.stringify(poCols)},
+      {key:'col_config_adv', value: JSON.stringify(advCols)},
+    ], {onConflict:'key'});
+  }
   renderColumnGrids();
   renderDashboard();
-  toast('Columns reset to default', 'info');
+  toast('Columns reset to default for all team members', 'info');
 };
 
 // ═══════════════════════════
