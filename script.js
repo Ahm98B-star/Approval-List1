@@ -995,6 +995,12 @@ window.submitEmailLock = async function() {
     errEl.style.display = 'none';
     showEmailFields();
     toast('Email settings unlocked', 'success');
+    // If unlock was triggered by tab navigation, complete it
+    if (window._pendingSettingsTab) {
+      const pending = window._pendingSettingsTab;
+      window._pendingSettingsTab = null;
+      switchSettingsTab(pending);
+    }
   } else {
     errEl.style.display = 'block';
     document.getElementById('email-lock-password').select();
@@ -1006,10 +1012,12 @@ function showEmailFields() {
   const unlocked = document.getElementById('email-unlocked-view');
   const btn      = document.getElementById('email-lock-btn');
   const ico      = document.getElementById('email-lock-icon');
+  const tabIco   = document.getElementById('email-tab-lock-icon');
   if (locked)   locked.style.display   = 'none';
   if (unlocked) { unlocked.style.display = 'block'; void unlocked.offsetWidth; }
   if (btn) btn.classList.add('unlocked');
-  if (ico) { ico.setAttribute('data-lucide','unlock'); lucide.createIcons(); }
+  if (ico)    { ico.setAttribute('data-lucide','unlock'); lucide.createIcons(); }
+  if (tabIco) { tabIco.setAttribute('data-lucide','unlock'); tabIco.style.color='var(--green)'; tabIco.style.opacity='1'; lucide.createIcons(); }
 }
 
 function lockEmail() {
@@ -1018,10 +1026,12 @@ function lockEmail() {
   const unlocked = document.getElementById('email-unlocked-view');
   const btn      = document.getElementById('email-lock-btn');
   const ico      = document.getElementById('email-lock-icon');
+  const tabIco   = document.getElementById('email-tab-lock-icon');
   if (locked)   locked.style.display   = 'block';
   if (unlocked) unlocked.style.display = 'none';
   if (btn) btn.classList.remove('unlocked');
-  if (ico) { ico.setAttribute('data-lucide','lock'); lucide.createIcons(); }
+  if (ico)    { ico.setAttribute('data-lucide','lock'); lucide.createIcons(); }
+  if (tabIco) { tabIco.setAttribute('data-lucide','lock'); tabIco.style.color=''; tabIco.style.opacity='.5'; lucide.createIcons(); }
 }
 
 // Re-lock when settings modal closes
@@ -1110,7 +1120,14 @@ advPctEl.addEventListener('change',()=>{
 custPctEl.addEventListener('input',calculate);
 
 document.getElementById('btn-settings')?.addEventListener('click',()=>settingsModal.classList.add('open'));
-document.getElementById('btn-close-settings')?.addEventListener('click',()=>settingsModal.classList.remove('open'));
+document.getElementById('btn-close-settings')?.addEventListener('click',()=>{
+  settingsModal.classList.remove('open');
+  lockEmail();
+  // Switch back to connection tab so email tab isn't visible when reopened
+  document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.dataset.tab === 'connection'));
+  document.querySelectorAll('.stab-panel').forEach(p => p.style.display = 'none');
+  const conn = document.getElementById('stab-connection'); if(conn) conn.style.display='block';
+});
 document.getElementById('btn-save-settings')?.addEventListener('click',saveSettings);
 document.getElementById('btn-finalize')?.addEventListener('click',openDispatchPreview);
 document.getElementById('btn-confirm-dispatch')?.addEventListener('click',confirmDispatch);
@@ -1132,7 +1149,18 @@ document.getElementById('new-mgr-input')?.addEventListener('keydown',e=>{
 
 // Close modals on backdrop click
 document.querySelectorAll('.mo').forEach(m=>{
-  m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('open'); });
+  m.addEventListener('click',e=>{
+    if(e.target===m){
+      m.classList.remove('open');
+      // If closing settings modal, lock email and reset to connection tab
+      if(m.id==='settings-modal'){
+        lockEmail();
+        document.querySelectorAll('.stab').forEach(b=>b.classList.toggle('on',b.dataset.tab==='connection'));
+        document.querySelectorAll('.stab-panel').forEach(p=>p.style.display='none');
+        const conn=document.getElementById('stab-connection'); if(conn) conn.style.display='block';
+      }
+    }
+  });
 });
 
 // ═══════════════════════════
@@ -1146,6 +1174,14 @@ init();
 //  SETTINGS TABS
 // ═══════════════════════════
 window.switchSettingsTab = function(tab) {
+  // Email tab requires unlock
+  if (tab === 'email' && !emailUnlocked) {
+    document.getElementById('email-lock-modal').classList.add('open');
+    // After unlock, auto-navigate to email tab
+    window._pendingSettingsTab = 'email';
+    setTimeout(() => document.getElementById('email-lock-password')?.focus(), 100);
+    return;
+  }
   document.querySelectorAll('.stab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   document.querySelectorAll('.stab-panel').forEach(p => p.style.display = 'none');
   const panel = document.getElementById('stab-' + tab);
