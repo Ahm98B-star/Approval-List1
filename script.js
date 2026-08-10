@@ -149,8 +149,16 @@ async function loadSettings() {
   const sEmails=get('manager_emails');
   if (sEmails && sEmails.value) {
     managerEmails=sEmails.value.split(',').map(e=>e.trim()).filter(Boolean);
-  } else if (managerEmail) {
-    managerEmails=[managerEmail]; // migrate legacy single email
+  }
+  // Always ensure legacy single email is included if not already present
+  if (managerEmail && !managerEmails.includes(managerEmail)) {
+    managerEmails.unshift(managerEmail);
+    // Save merged list back to Supabase so it's persisted
+    if (supabaseClient) {
+      supabaseClient.from('settings').upsert([
+        {key:'manager_emails', value:managerEmails.join(',')}
+      ], {onConflict:'key'}).catch(()=>{});
+    }
   }
   renderManagerEmails();
   const sCC=get('cc_emails');
@@ -737,7 +745,8 @@ async function sendEmail(isScheduled=false) {
   isSending=true;
   let ids = [];
   try {
-    if (!managerEmail) throw new Error('Manager email not set');
+    const primaryMgrCheck = managerEmails[0] || managerEmail;
+    if (!primaryMgrCheck) throw new Error('Manager email not set — add one in Settings → Email tab');
     if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings');
 
     ids=pending.map(i=>i.id);
@@ -785,7 +794,7 @@ async function sendEmail(isScheduled=false) {
     // Send to all manager emails — primary gets to_email, rest go to CC
     const primaryMgr = managerEmails[0] || managerEmail;
     const extraMgrs  = managerEmails.slice(1);
-    const allCC      = [...extraMgrs, ...ccEmails].join(', ');
+    const allCC      = [...extraMgrs, ...ccEmails].filter(Boolean).join(', ');
 
     await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
       subject_line:`GM Procurement Approval Request - ${today}`,
