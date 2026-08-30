@@ -6,6 +6,8 @@ let SUPABASE_ANON_KEY = localStorage.getItem('supabase_anon_key')    || '';
 let EMAILJS_SERVICE_ID  = localStorage.getItem('emailjs_service_id')  || '';
 let EMAILJS_TEMPLATE_ID = localStorage.getItem('emailjs_template_id') || '';
 let EMAILJS_PUBLIC_KEY  = localStorage.getItem('emailjs_public_key')  || '';
+let PA_WEBHOOK_URL      = localStorage.getItem('pa_webhook_url')      || '';
+let DISPATCH_METHOD     = localStorage.getItem('dispatch_method')      || 'emailjs'; // 'emailjs' | 'powerautomate'
 
 let supabaseClient = null;
 let entries        = [];
@@ -104,7 +106,8 @@ async function init() {
     subscribeRealtime();
     calculate();
     // Check schedule every 60s — only once per minute window
-    setInterval(checkSchedule, 60000);
+    // Check every 10s so we never miss a minute window
+    setInterval(checkSchedule, 10000);
   } catch(err) { toast('DB connection failed. Check Settings.','error'); }
 }
 
@@ -131,6 +134,9 @@ async function loadSettings() {
   const svcEl=document.getElementById('input-emailjs-svc'); if(svcEl) svcEl.value=EMAILJS_SERVICE_ID;
   const tplEl=document.getElementById('input-emailjs-tpl'); if(tplEl) tplEl.value=EMAILJS_TEMPLATE_ID;
   const pubEl=document.getElementById('input-emailjs-pub'); if(pubEl) pubEl.value=EMAILJS_PUBLIC_KEY;
+  const paEl=document.getElementById('input-pa-webhook'); if(paEl) paEl.value=PA_WEBHOOK_URL;
+  const dmEl=document.getElementById('input-dispatch-method'); if(dmEl) dmEl.value=DISPATCH_METHOD;
+  updateDispatchMethodUI(DISPATCH_METHOD);
 
   const sTime=get('send_time');
   if (sTime) {
@@ -181,16 +187,26 @@ async function saveSettings() {
   const sb=document.getElementById('daily-schedule-text');
   if(sb){sb.innerHTML=`<i data-lucide="clock"></i>&nbsp;Auto-Dispatch: ${newTime}`;lucide.createIcons();}
 
+  const newPA  = document.getElementById('input-pa-webhook')?.value.trim()||'';
+  const newDM  = document.getElementById('input-dispatch-method')?.value||'emailjs';
+
   if (newKey!==SUPABASE_ANON_KEY||newUrl!==SUPABASE_URL||newSvc!==EMAILJS_SERVICE_ID||newTpl!==EMAILJS_TEMPLATE_ID||newPub!==EMAILJS_PUBLIC_KEY) {
     localStorage.setItem('supabase_anon_key',newKey);
     localStorage.setItem('supabase_project_url',newUrl);
     localStorage.setItem('emailjs_service_id',newSvc);
     localStorage.setItem('emailjs_template_id',newTpl);
     localStorage.setItem('emailjs_public_key',newPub);
+    localStorage.setItem('pa_webhook_url',newPA);
+    localStorage.setItem('dispatch_method',newDM);
     toast('Credentials saved. Refreshing…','success');
     setTimeout(()=>window.location.reload(),1000);
     return;
   }
+  // Save PA settings (no reload needed)
+  PA_WEBHOOK_URL  = newPA;
+  DISPATCH_METHOD = newDM;
+  localStorage.setItem('pa_webhook_url',newPA);
+  localStorage.setItem('dispatch_method',newDM);
   try {
     await Promise.all([
       supabaseClient.from('settings').upsert([{key:'send_time',value:newTime}],{onConflict:'key'}),
@@ -796,14 +812,76 @@ async function sendEmail(isScheduled=false) {
     const extraMgrs  = managerEmails.slice(1);
     const allCC      = [...extraMgrs, ...ccEmails].filter(Boolean).join(', ');
 
-    await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
-      subject_line:`GM Procurement Approval Request - ${today}`,
-      to_email:primaryMgr, cc_email:allCC,
-      po_table:poH, adv_table:advH,
-      summary_count:pending.length, po_count:pos.length, adv_count:advs.length,
-      total_po_sar:totalPo.toLocaleString(), total_adv_sar:totalAdv.toLocaleString(),
-      total_sar:(totalPo+totalAdv).toLocaleString()
-    }, EMAILJS_PUBLIC_KEY);
+    const subject  = `GM Procurement Approval Request - ${today}`;
+    const fullHtml = `<!DOCTYPE html><html><body style="font-family:sans-serif;font-size:13px;color:#0f172a;max-width:900px;margin:0 auto;padding:20px">
+      <h2 style="margin:0 0 4px;font-size:16px">GM Procurement Approval Request</h2>
+      <p style="color:#64748b;font-size:12px;margin:0 0 16px">${today} · ${pending.length} item${pending.length!==1?'s':''} pending</p>
+      ${poH}${advH}
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
+      <table style="font-size:12px;color:#64748b;border-collapse:collapse">
+        <tr><td style="padding-right:24px">Total PO SAR ⃁</td><td style="font-weight:600;color:#0f172a">${totalPo.toLocaleString()}</td></tr>
+        <tr><td style="padding-right:24px">Total Advance SAR ⃁</td><td style="font-weight:600;color:#0f172a">${totalAdv.toLocaleString()}</td></tr>
+        <tr><td style="padding-right:24px;font-weight:600">Grand Total SAR ⃁</td><td style="font-weight:700;color:#4f46e5;font-size:14px">${(totalPo+totalAdv).toLocaleString()}</td></tr>
+      </table>
+    </body></html>`;
+
+    if (DISPATCH_METHOD === 'powerautomate') {
+      // ── Power Automate path ──
+      if (!PA_WEBHOOK_URL) throw new Error('Power Automate webhook URL not set in Settings → Connection');
+      const paBody = JSON.stringify({
+        subject_line: subject,
+        to_email:     primaryMgr,
+        cc_email:     allCC,
+        html_body:    fullHtml,
+        plain_text:   `Procurement Approval Request - ${today}. ${pending.length} items. Total SAR: ${(totalPo+totalAdv).toLocaleString()}`
+      });
+      // Power Platform environment URLs need different handling than Logic Apps URLs
+      const isPowerPlatform = PA_WEBHOOK_URL.includes('environment.api.powerplatform') || PA_WEBHOOK_URL.includes('powerautomate.com');
+
+      const resp = await fetch(PA_WEBHOOK_URL, {
+        method: 'POST',
+        mode: isPowerPlatform ? 'no-cors' : 'cors',
+        headers: isPowerPlatform
+          ? { 'Content-Type': 'application/json' }
+          : { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: paBody
+      });
+
+      // no-cors mode returns opaque response (status 0) — treat as success
+      // since Power Platform accepted the request if no network error thrown
+      if (isPowerPlatform && resp.type === 'opaque') {
+        toast('Dispatched via Power Automate ✓', 'success');
+        document.getElementById('success-modal').classList.add('open');
+        isSending = false;
+        await loadEntries();
+        return;
+      }
+      // Power Automate returns 200 or 202 on success — both are fine
+      if (resp.status !== 200 && resp.status !== 202 && resp.status !== 204) {
+        let errTxt = '';
+        try { errTxt = await resp.text(); } catch {}
+        // 401 = URL missing sig parameter or expired
+        if (resp.status === 401) throw new Error('Power Automate: Unauthorized (401) — copy the full webhook URL including the &sig= parameter at the end');
+        // 403 = auth scheme mismatch
+        if (resp.status === 403) throw new Error('Power Automate: Forbidden (403) — check the webhook URL is complete and the flow is enabled');
+        throw new Error(`Power Automate returned ${resp.status}${errTxt?' — '+errTxt.slice(0,200):''}`);
+      }
+    } else {
+      // ── EmailJS path ──
+      if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings → Connection');
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        subject_line: subject,
+        to_email:     primaryMgr,
+        cc_email:     allCC,
+        po_table:     poH,
+        adv_table:    advH,
+        html_body:    fullHtml,
+        summary_count:pending.length, po_count:pos.length, adv_count:advs.length,
+        total_po_sar: totalPo.toLocaleString(),
+        total_adv_sar:totalAdv.toLocaleString(),
+        total_sar:    (totalPo+totalAdv).toLocaleString()
+      }, EMAILJS_PUBLIC_KEY);
+    }
 
     toast('Dispatched successfully!','success');
     document.getElementById('success-modal').classList.add('open');
@@ -818,17 +896,43 @@ async function sendEmail(isScheduled=false) {
   } finally { isSending=false; }
 }
 
-// Schedule check — fires every 60s (one tick per minute max)
-// Extra guard: track last-sent date in memory
-let lastScheduledDate = '';
+// Schedule check — fires every 10s
+// Guards: per-day lock + per-minute lock + isSending flag
+let lastScheduledDate  = '';   // prevents re-firing same calendar day
+let lastScheduledMinute = '';  // prevents re-firing same minute (multi-tab safe)
+
 async function checkSchedule() {
-  const now=new Date();
-  const t=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  const today=now.toISOString().split('T')[0];
-  if (t===dailySendTime && today!==lastScheduledDate && !isSending && entries.some(e=>e.status==='pending')) {
-    lastScheduledDate=today;
-    await sendEmail(true);
+  if (!dailySendTime || isSending) return;
+
+  const now    = new Date();
+  const hh     = String(now.getHours()).padStart(2,'0');
+  const mm     = String(now.getMinutes()).padStart(2,'0');
+  const t      = `${hh}:${mm}`;
+  const today  = now.toISOString().split('T')[0];
+  const minute = `${today}T${t}`;  // unique per-minute key
+
+  // Already fired this minute or this day
+  if (minute === lastScheduledMinute) return;
+  if (today  === lastScheduledDate)   return;
+
+  // Time matches configured send time
+  if (t !== dailySendTime) return;
+
+  // Check freshly — reload from Supabase to avoid stale in-memory state
+  let hasPending = entries.some(e => e.status === 'pending');
+  if (!hasPending && supabaseClient) {
+    try {
+      const { data } = await supabaseClient.from('entries')
+        .select('is_sent,on_hold').eq('is_sent',false).eq('on_hold',false).limit(1);
+      hasPending = data && data.length > 0;
+    } catch {}
   }
+
+  if (!hasPending) return;
+
+  lastScheduledMinute = minute;
+  lastScheduledDate   = today;
+  await sendEmail(true);
 }
 
 // ═══════════════════════════
@@ -1488,16 +1592,31 @@ async function checkManagerEmail() {
 }
 
 async function checkEmailJS() {
+  if (DISPATCH_METHOD === 'powerautomate') {
+    if (!PA_WEBHOOK_URL) return { status:'fail', detail:'Power Automate webhook URL not set. Add it in Connection tab.' };
+    // Quick reachability check — OPTIONS is CORS-safe
+    try {
+      await fetch(PA_WEBHOOK_URL, { method:'OPTIONS', mode:'no-cors' });
+      return { status:'ok', detail:'Power Automate webhook URL is configured.' };
+    } catch {
+      return { status:'warn', detail:'Webhook URL set but could not reach it — verify it is correct and the flow is active.' };
+    }
+  }
   if (!EMAILJS_SERVICE_ID) return { status:'fail', detail:'EmailJS Service ID missing. Add it in Connection tab.' };
   if (!EMAILJS_TEMPLATE_ID) return { status:'fail', detail:'EmailJS Template ID missing. Add it in Connection tab.' };
   if (!EMAILJS_PUBLIC_KEY)  return { status:'fail', detail:'EmailJS Public Key missing. Add it in Connection tab.' };
   if (typeof emailjs === 'undefined') return { status:'fail', detail:'EmailJS library not loaded. Check your internet connection.' };
-  return { status:'ok', detail:`Service: ${EMAILJS_SERVICE_ID} · Template: ${EMAILJS_TEMPLATE_ID}` };
+  return { status:'ok', detail:`EmailJS ready · Service: ${EMAILJS_SERVICE_ID}` };
 }
 
 async function checkScheduleConfig() {
-  if (!dailySendTime || dailySendTime === '09:00') return { status:'warn', detail:`Auto-dispatch set to ${dailySendTime}. Change in Connection tab if needed.` };
-  return { status:'ok', detail:`Auto-dispatch scheduled at ${dailySendTime} daily.` };
+  if (!dailySendTime) return { status:'fail', detail:'No auto-dispatch time set. Add one in Settings → Connection.' };
+  const now = new Date();
+  const hh  = String(now.getHours()).padStart(2,'0');
+  const mm  = String(now.getMinutes()).padStart(2,'0');
+  const current = `${hh}:${mm}`;
+  const detail = `Scheduled at ${dailySendTime} daily. Current time: ${current}. Last fired: ${lastScheduledDate||'not yet today'}.`;
+  return { status:'ok', detail };
 }
 
 async function checkPendingEntries() {
@@ -1546,3 +1665,19 @@ window.addCustomColumn = function() {
   renderColumnGrids();
   toast(`Column "${label}" added — click Apply & Save`, 'success');
 };
+
+// ═══════════════════════════
+//  DISPATCH METHOD UI
+// ═══════════════════════════
+function updateDispatchMethodUI(method) {
+  const ejsSection = document.getElementById('emailjs-section');
+  const paSection  = document.getElementById('pa-section');
+  if (!ejsSection || !paSection) return;
+  if (method === 'powerautomate') {
+    ejsSection.style.display = 'none';
+    paSection.style.display  = 'block';
+  } else {
+    ejsSection.style.display = 'block';
+    paSection.style.display  = 'none';
+  }
+}
