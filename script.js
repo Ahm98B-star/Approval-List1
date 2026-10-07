@@ -6,8 +6,11 @@ let SUPABASE_ANON_KEY = localStorage.getItem('supabase_anon_key')    || '';
 let EMAILJS_SERVICE_ID  = localStorage.getItem('emailjs_service_id')  || '';
 let EMAILJS_TEMPLATE_ID = localStorage.getItem('emailjs_template_id') || '';
 let EMAILJS_PUBLIC_KEY  = localStorage.getItem('emailjs_public_key')  || '';
-let PA_WEBHOOK_URL      = localStorage.getItem('pa_webhook_url')      || '';
-let DISPATCH_METHOD     = localStorage.getItem('dispatch_method')      || 'emailjs'; // 'emailjs' | 'powerautomate'
+// V3.1: EmailJS is the only dispatch provider. Remove stale legacy Power Automate settings.
+localStorage.removeItem('pa_webhook_url');
+localStorage.setItem('dispatch_method','emailjs');
+let DISPATCH_METHOD = 'emailjs';
+const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
 
 let supabaseClient = null;
 let entries        = [];
@@ -51,6 +54,91 @@ const holdBanner      = document.getElementById('hold-banner');
 // ═══════════════════════════
 const gv  = id => document.getElementById(id)?.value.trim() ?? '';
 const gn  = id => parseFloat(gv(id)) || 0;
+
+// ═══════════════════════════
+//  APPROVAL ROUTING — V3
+// ═══════════════════════════
+// Rules use the SAR equivalent, regardless of source currency.
+// Exception: any PO number starting with 2 is CAPEX and always requires GM approval.
+// < 10,000 SAR = SCM | 10,000–50,000 SAR = FM | > 50,000 SAR = GM
+function isCapexPO(entryOrPo) {
+  const po = typeof entryOrPo === 'string'
+    ? entryOrPo
+    : (entryOrPo?.po ?? entryOrPo?.po_number ?? '');
+  return String(po || '').trim().startsWith('2');
+}
+
+function getApprovalRoute(entryOrSar) {
+  const sar = typeof entryOrSar === 'number'
+    ? Number(entryOrSar || 0)
+    : Number(entryOrSar?.amountSar ?? entryOrSar?.amount_sar ?? 0);
+  if (typeof entryOrSar !== 'number' && isCapexPO(entryOrSar)) return 'GM';
+  if (sar > 50000) return 'GM';
+  if (sar >= 10000) return 'FM';
+  return 'SCM';
+}
+
+function getEmailApprovers(e) {
+  const route = getApprovalRoute(e);
+  if (route === 'GM') return 'FM + GM';
+  if (route === 'FM') return 'FM Only';
+  return 'SCM Only';
+}
+
+function isAdvanceEntry(e) { return Number(e?.advanceAmount || 0) > 0; }
+function requiresFMApproval(e) {
+  const route = getApprovalRoute(e);
+  return !isAdvanceEntry(e) && (route === 'FM' || route === 'GM');
+}
+function isDispatchEligible(e) { return isAdvanceEntry(e) || requiresFMApproval(e); }
+function getDispatchGroups(list) {
+  const normal = list.filter(e => !isAdvanceEntry(e));
+  return {
+    // Approval chain is cumulative: every GM PO also requires FM approval,
+    // so GM POs intentionally appear in BOTH FM and GM sections.
+    fm: normal.filter(e => { const r=getApprovalRoute(e); return r === 'FM' || r === 'GM'; }),
+    gm: normal.filter(e => getApprovalRoute(e) === 'GM'),
+    scm: normal.filter(e => getApprovalRoute(e) === 'SCM'),
+    advances: list.filter(isAdvanceEntry),
+  };
+}
+
+function updateApprovalRoutePreview() {
+  const box=document.getElementById('approval-route-preview');
+  if(!box) return;
+  const sar=Number(sarEl?.value||0);
+  const po=gv('po-number');
+  const capex=isCapexPO(po);
+  const route=getApprovalRoute({amountSar:sar, po});
+  const advance=hasAdvEl?.checked || typeEl?.value==='Advance Approval';
+  box.className=`approval-route-preview route-${route.toLowerCase()}${capex?' capex-route':''}`;
+  const chain = route==='SCM' ? 'SCM' : route==='FM' ? 'SCM → FM' : 'SCM → FM → GM';
+  const reason = capex ? 'CAPEX exception · PO starts with 2' : (route==='SCM'?'Below 10,000 SAR':route==='FM'?'10,000–50,000 SAR':'Above 50,000 SAR');
+  box.innerHTML=`<span class="route-dot"></span><span><b>${route} approval${capex?' · CAPEX':''}</b><small>${chain} · ${reason}</small></span>${advance?'<em>+ Advance list</em>':''}`;
+}
+
+
+const RECENT_SENT_TTL = 30 * 60 * 1000;
+function getRecentSentIds() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('recently_sent_entries') || '{}');
+    if (!raw.ts || !Array.isArray(raw.ids) || (Date.now() - raw.ts) > RECENT_SENT_TTL) {
+      localStorage.removeItem('recently_sent_entries');
+      return new Set();
+    }
+    return new Set(raw.ids);
+  } catch { return new Set(); }
+}
+function rememberRecentlySent(ids) {
+  if (!ids?.length) return;
+  localStorage.setItem('recently_sent_entries', JSON.stringify({ids:[...new Set(ids)], ts:Date.now()}));
+}
+function clearRecentlySent(ids=[]) {
+  const current = getRecentSentIds();
+  ids.forEach(id=>current.delete(id));
+  if (!current.size) localStorage.removeItem('recently_sent_entries');
+  else localStorage.setItem('recently_sent_entries', JSON.stringify({ids:[...current], ts:Date.now()}));
+}
 
 function extractSupplier(s) {
   const v = (s||'').trim();
@@ -96,6 +184,24 @@ async function init() {
   restoreDraft();
   calculate();
 
+  if (DEMO_MODE) {
+    managerEmail='gm@company.com';
+    managerEmails=['gm@company.com'];
+    ccEmails=['procurement@company.com'];
+    dailySendTime='14:00';
+    entries=[
+      {id:'demo-1',date:new Date().toISOString().slice(0,10),prSo:'3600004011',po:'3200007012',woSo:'',description:'4140-L80 material purchase',category:'Material purchase',supplier:'100245 - Gulf Metals',amount:48500,currency:'SAR',amountSar:48500,advancePercent:0,advanceAmount:0,notes:'Required for workshop',is_sent:false,status:'pending',on_hold:false},
+      {id:'demo-2',date:new Date().toISOString().slice(0,10),prSo:'3600004004',po:'3200007008',woSo:'WO-8821',description:'Machine shop service',category:'Service',supplier:'100118 - Eastern Industrial',amount:12800,currency:'SAR',amountSar:12800,advancePercent:0,advanceAmount:0,notes:'Urgent repair',is_sent:false,status:'pending',on_hold:false},
+      {id:'demo-3',date:new Date().toISOString().slice(0,10),prSo:'3600003970',po:'3200006991',woSo:'',description:'Advance for imported consumables',category:'Stock',supplier:'100377 - Prime Supply',amount:22000,currency:'USD',amountSar:82500,advancePercent:30,advanceAmount:24750,notes:'30% advance as per quotation',is_sent:false,status:'hold',on_hold:true},
+      {id:'demo-4',date:new Date(Date.now()-86400000).toISOString().slice(0,10),prSo:'3600003968',po:'3200006984',woSo:'',description:'Thread protectors',category:'Stock',supplier:'100052 - Saudi Protectors',amount:9100,currency:'SAR',amountSar:9100,advancePercent:0,advanceAmount:0,notes:'',is_sent:true,status:'sent',on_hold:false}
+    ];
+    const sb=document.getElementById('daily-schedule-text');
+    if(sb) sb.innerHTML=`<i data-lucide="clock"></i>&nbsp;Auto-Dispatch: ${dailySendTime}`;
+    renderManagerEmails(); renderCcTags(); renderDashboard(); updateSupplierList(); buildReuseMenu(); calculate();
+    lucide.createIcons();
+    toast('Demo mode — sample data only','info');
+    return;
+  }
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) { setupModal.classList.add('open'); return; }
   try {
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -134,9 +240,6 @@ async function loadSettings() {
   const svcEl=document.getElementById('input-emailjs-svc'); if(svcEl) svcEl.value=EMAILJS_SERVICE_ID;
   const tplEl=document.getElementById('input-emailjs-tpl'); if(tplEl) tplEl.value=EMAILJS_TEMPLATE_ID;
   const pubEl=document.getElementById('input-emailjs-pub'); if(pubEl) pubEl.value=EMAILJS_PUBLIC_KEY;
-  const paEl=document.getElementById('input-pa-webhook'); if(paEl) paEl.value=PA_WEBHOOK_URL;
-  const dmEl=document.getElementById('input-dispatch-method'); if(dmEl) dmEl.value=DISPATCH_METHOD;
-  updateDispatchMethodUI(DISPATCH_METHOD);
 
   const sTime=get('send_time');
   if (sTime) {
@@ -170,6 +273,9 @@ async function loadSettings() {
   const sCC=get('cc_emails');
   if (sCC) { ccEmails=sCC.value?sCC.value.split(',').map(e=>e.trim()).filter(Boolean):[]; renderCcTags(); }
 
+  const sLastDispatch=get('last_dispatch_date');
+  if (sLastDispatch?.value) lastScheduledDate=sLastDispatch.value;
+
   // Load column config from Supabase (shared across all team members)
   loadColsFromSettings(data);
 }
@@ -187,8 +293,6 @@ async function saveSettings() {
   const sb=document.getElementById('daily-schedule-text');
   if(sb){sb.innerHTML=`<i data-lucide="clock"></i>&nbsp;Auto-Dispatch: ${newTime}`;lucide.createIcons();}
 
-  const newPA  = document.getElementById('input-pa-webhook')?.value.trim()||'';
-  const newDM  = document.getElementById('input-dispatch-method')?.value||'emailjs';
 
   if (newKey!==SUPABASE_ANON_KEY||newUrl!==SUPABASE_URL||newSvc!==EMAILJS_SERVICE_ID||newTpl!==EMAILJS_TEMPLATE_ID||newPub!==EMAILJS_PUBLIC_KEY) {
     localStorage.setItem('supabase_anon_key',newKey);
@@ -196,17 +300,14 @@ async function saveSettings() {
     localStorage.setItem('emailjs_service_id',newSvc);
     localStorage.setItem('emailjs_template_id',newTpl);
     localStorage.setItem('emailjs_public_key',newPub);
-    localStorage.setItem('pa_webhook_url',newPA);
-    localStorage.setItem('dispatch_method',newDM);
+    localStorage.setItem('dispatch_method','emailjs');
     toast('Credentials saved. Refreshing…','success');
     setTimeout(()=>window.location.reload(),1000);
     return;
   }
-  // Save PA settings (no reload needed)
-  PA_WEBHOOK_URL  = newPA;
-  DISPATCH_METHOD = newDM;
-  localStorage.setItem('pa_webhook_url',newPA);
-  localStorage.setItem('dispatch_method',newDM);
+  // EmailJS is the only dispatch method in V3.1.
+  DISPATCH_METHOD = 'emailjs';
+  localStorage.setItem('dispatch_method','emailjs');
   try {
     await Promise.all([
       supabaseClient.from('settings').upsert([{key:'send_time',value:newTime}],{onConflict:'key'}),
@@ -250,10 +351,64 @@ function subscribeRealtime() {
 }
 
 // ═══════════════════════════
+//  REQUIRED REFERENCE FIELDS / N/A
+// ═══════════════════════════
+const NA_FIELD_PAIRS = [
+  ['pr-so-number','pr-so-na'],
+  ['wo-so-number','wo-so-na']
+];
+
+function setNAField(fieldId, checkboxId, checked, restorePrevious=true) {
+  const input = document.getElementById(fieldId);
+  const checkbox = document.getElementById(checkboxId);
+  if (!input || !checkbox) return;
+  checkbox.checked = !!checked;
+  if (checked) {
+    if (input.value && input.value.trim().toUpperCase() !== 'N/A') input.dataset.previousValue = input.value;
+    input.value = 'N/A';
+    input.disabled = true;
+    input.required = false;
+    input.classList.add('na-field');
+  } else {
+    input.disabled = false;
+    input.required = true;
+    if (input.value.trim().toUpperCase() === 'N/A') input.value = restorePrevious ? (input.dataset.previousValue || '') : '';
+    delete input.dataset.previousValue;
+    input.classList.remove('na-field');
+  }
+}
+
+function syncNAFieldsFromValues() {
+  NA_FIELD_PAIRS.forEach(([fieldId, checkboxId]) => {
+    const input = document.getElementById(fieldId);
+    setNAField(fieldId, checkboxId, (input?.value || '').trim().toUpperCase() === 'N/A', false);
+  });
+}
+
+function resetNAFields() {
+  NA_FIELD_PAIRS.forEach(([fieldId, checkboxId]) => setNAField(fieldId, checkboxId, false, false));
+}
+
+// ═══════════════════════════
 //  CREATE / EDIT
 // ═══════════════════════════
 async function handleSubmit(e, onHold=false) {
   e.preventDefault();
+  const existing = editingId ? entries.find(i=>i.id===editingId) : null;
+  const effectiveHold = onHold || !!existing?.on_hold;
+  const poValue = gv('po-number');
+  const amountValue = parseFloat(amtEl.value);
+  if (!poValue) return toast('PO Number is required','error');
+  if (!gv('pr-so-number')) return toast('PR # is required — or check N/A','error');
+  if (!gv('wo-so-number')) return toast('WO / SO # is required — or check N/A','error');
+  if (!gv('description')) return toast('Description is required','error');
+  if (!gv('supplier')) return toast('Supplier is required','error');
+  if (!Number.isFinite(amountValue) || amountValue <= 0) return toast('Enter a valid amount greater than 0','error');
+  const isAdvance = typeEl.value==='Advance Approval' || hasAdvEl.checked;
+  const pctValue = parseFloat(advPctEl.value==='custom'?custPctEl.value:advPctEl.value)||0;
+  if (isAdvance && pctValue <= 0) return toast('Select the advance percentage','error');
+  const duplicate = entries.find(i=>i.po===poValue && i.id!==editingId);
+  if (duplicate && !confirm(`PO ${poValue} already exists (${duplicate.status}). Continue anyway?`)) return;
   const data = {
     po_date:      new Date().toISOString().split('T')[0],
     description:  gv('description'),
@@ -269,33 +424,51 @@ async function handleSubmit(e, onHold=false) {
     advance_amount:  parseFloat(advAmtEl.value)||0,
     notes:        gv('notes'),
     is_sent:      false,
-    on_hold:      onHold
+    on_hold:      effectiveHold
   };
+
+  if (DEMO_MODE) {
+    if (editingId) {
+      const idx=entries.findIndex(i=>i.id===editingId);
+      if(idx>=0) entries[idx]={...entries[idx],date:data.po_date,prSo:data.pr_so_number,po:data.po_number,woSo:data.wo_so_number,description:data.description,category:data.category,supplier:data.supplier,amount:data.amount,currency:data.currency,amountSar:data.amount_sar,advancePercent:data.advance_percent,advanceAmount:data.advance_amount,notes:data.notes,is_sent:false,status:data.on_hold?'hold':'pending',on_hold:data.on_hold};
+      cancelEdit();
+      toast(data.on_hold?'Changes saved — still On Hold':'Request updated','success');
+    } else {
+      const base={id:'demo-'+Date.now(),date:data.po_date,prSo:data.pr_so_number,po:data.po_number,woSo:data.wo_so_number,description:data.description,category:data.category,supplier:data.supplier,amount:data.amount,currency:data.currency,amountSar:data.amount_sar,advancePercent:data.advance_percent,advanceAmount:data.advance_amount,notes:data.notes,is_sent:false,status:data.on_hold?'hold':'pending',on_hold:data.on_hold};
+      if (typeEl.value==='PO Approval' && hasAdvEl.checked) {
+        entries.unshift({...base,id:base.id+'-adv'});
+        entries.unshift({...base,id:base.id+'-po',advancePercent:0,advanceAmount:0});
+      } else entries.unshift(base);
+      toast(data.on_hold?'Saved on hold':'Request submitted','success');
+    }
+    form.reset(); resetNAFields(); hasAdvEl.checked=false; advFields.style.display='none'; advAmtEl.value=0; editingId=null; cancelBtn.style.display='none'; editBanner.classList.remove('show'); holdBanner.classList.remove('show'); document.getElementById('form-title').textContent='New Approval Request'; calculate(); renderDashboard(); updateSupplierList(); buildReuseMenu(); return;
+  }
 
   try {
     if (editingId) {
       const {error} = await supabaseClient.from('entries').update(data).eq('id',editingId);
       if (error) throw error;
       cancelEdit();
-      toast(onHold?'Saved on hold':'Entry updated','success');
+      toast(effectiveHold?'Changes saved — still On Hold':'Request updated','success');
     } else {
       if (typeEl.value==='PO Approval' && hasAdvEl.checked) {
         const {error} = await supabaseClient.from('entries').insert([
-          {...data, advance_amount:0, advance_percent:0, on_hold:onHold},
-          {...data, on_hold:onHold}
+          {...data, advance_amount:0, advance_percent:0, on_hold:effectiveHold},
+          {...data, on_hold:effectiveHold}
         ]);
         if (error) throw error;
       } else {
         const {error} = await supabaseClient.from('entries').insert([data]);
         if (error) throw error;
       }
-      toast(onHold?'Saved for later — won\'t dispatch until released':'Entry recorded','success');
+      toast(effectiveHold?'Saved on hold — won\'t dispatch until released':'Request submitted','success');
     }
     form.reset();
+    resetNAFields();
     hasAdvEl.checked=false;
     advFields.style.display='none';
     advAmtEl.value=0;
-    document.getElementById('form-title').textContent='New Record';
+    document.getElementById('form-title').textContent='New Approval Request';
     sessionStorage.removeItem('approval_form_draft');
     calculate();
   } catch(err) { toast('Save failed: '+err.message,'error'); }
@@ -311,10 +484,19 @@ function startEdit(id) {
 
   typeEl.value = e.advanceAmount>0 ? 'Advance Approval' : 'PO Approval';
   hasAdvEl.checked=false;
+  if (e.advanceAmount>0) {
+    const standard=['10','20','30','50','100'];
+    const pct=String(e.advancePercent||0);
+    if (standard.includes(pct)) { advPctEl.value=pct; custPctGrp.style.display='none'; }
+    else { advPctEl.value='custom'; custPctEl.value=e.advancePercent||''; custPctGrp.style.display='block'; }
+  } else {
+    advPctEl.value='0'; custPctEl.value=''; custPctGrp.style.display='none';
+  }
   ['pr-so-number','po-number','wo-so-number','description','category','supplier','notes'].forEach(fid=>{
     const map={'pr-so-number':'prSo','po-number':'po','wo-so-number':'woSo','description':'description','category':'category','supplier':'supplier','notes':'notes'};
     const el=document.getElementById(fid); if(el) el.value=e[map[fid]]||'';
   });
+  syncNAFieldsFromValues();
   document.getElementById('amount').value=e.amount;
   curEl.value=e.currency;
   calculate();
@@ -324,11 +506,12 @@ function startEdit(id) {
 
 function cancelEdit() {
   editingId=null;
-  document.getElementById('form-title').textContent='New Record';
+  document.getElementById('form-title').textContent='New Approval Request';
   cancelBtn.style.display='none';
   editBanner.classList.remove('show');
   holdBanner.classList.remove('show');
   form.reset();
+  resetNAFields();
   hasAdvEl.checked=false;
   advFields.style.display='none';
   advAmtEl.value=0;
@@ -337,8 +520,10 @@ function cancelEdit() {
 }
 
 async function deleteEntry(id) {
-  if (!confirm('Delete this record?')) return;
-  await supabaseClient.from('entries').delete().eq('id',id);
+  if (!confirm('Delete this request?')) return;
+  if (DEMO_MODE) { entries=entries.filter(e=>e.id!==id); renderDashboard(); return; }
+  const {error}=await supabaseClient.from('entries').delete().eq('id',id);
+  if(error) return toast('Delete failed: '+error.message,'error');
   await loadEntries();
 }
 
@@ -346,6 +531,7 @@ async function deleteEntry(id) {
 async function toggleHold(id) {
   const e=entries.find(i=>i.id===id); if(!e) return;
   const newHold=!e.on_hold;
+  if (DEMO_MODE) { e.on_hold=newHold; e.is_sent=false; e.status=newHold?'hold':'pending'; toast(newHold?'Moved to On Hold':'Released to Pending','info'); renderDashboard(); return; }
   const {error}=await supabaseClient.from('entries').update({on_hold:newHold,is_sent:false}).eq('id',id);
   if (error) return toast('Failed: '+error.message,'error');
   toast(newHold?'Moved to On Hold — won\'t dispatch':'Released — will include in next dispatch','info');
@@ -361,6 +547,7 @@ function reuseEntry(id) {
     const el=document.getElementById(fid); if(el) el.value=e[map[fid]]||'';
   });
   ['po-number','pr-so-number','wo-so-number'].forEach(fid=>{const el=document.getElementById(fid);if(el)el.value='';});
+  resetNAFields();
   document.getElementById('amount').value=e.amount;
   curEl.value=e.currency;
   calculate();
@@ -431,6 +618,7 @@ function getCellValue(e, key) {
     status:        e.status === 'sent' ? 'Sent' : e.status === 'hold' ? 'On Hold' : 'Pending',
     prSo:          e.prSo || '-',
     woSo:          e.woSo || '-',
+    approval:      getApprovalRoute(e),
   };
   // Custom columns stored as extra_* in entry
   if (key.startsWith('extra_')) return e[key] || '-';
@@ -441,10 +629,14 @@ function getCellValue(e, key) {
 function getCellHtml(e, key, tableType) {
   if (key === 'status') {
     if (e.status==='hold') return `<span class="sp hold">⏸ On Hold</span>`;
-    if (e.status==='sent') return `<span class="sp sent">Sent</span>`;
+    if (e.status==='sent') {
+      const recent=getRecentSentIds();
+      return recent.has(e.id) ? `<span class="sp just-sent">Just Sent</span>` : `<span class="sp sent">Sent</span>`;
+    }
     return `<span class="sp pending">Pending</span>`;
   }
   if (key === 'category') return e.category ? `<span class="cp">${e.category}</span>` : '-';
+  if (key === 'approval') { const r=getApprovalRoute(e); return `<span class="approval-pill approval-${r.toLowerCase()}">${r}</span>`; }
   if (key === 'amountSar' || key === 'advanceAmount') return `<b>${getCellValue(e,key)}</b>`;
   const val = getCellValue(e, key);
   const truncKeys = ['supplier','notes','description'];
@@ -497,6 +689,10 @@ function applyFilter(arr) {
     case 'pending': return arr.filter(e=>e.status==='pending');
     case 'hold':    return arr.filter(e=>e.status==='hold');
     case 'sent':    return arr.filter(e=>e.status==='sent');
+    case 'justsent': { const r=getRecentSentIds(); return arr.filter(e=>e.status==='sent' && r.has(e.id)); }
+    case 'scm':     return arr.filter(e=>!isAdvanceEntry(e) && getApprovalRoute(e)==='SCM');
+    case 'fm':      return arr.filter(e=>requiresFMApproval(e));
+    case 'gm':      return arr.filter(e=>!isAdvanceEntry(e) && getApprovalRoute(e)==='GM');
     case 'today':   return arr.filter(e=>e.date===today);
     case 'week':    return arr.filter(e=>e.date&&new Date(e.date)>=ws);
     default: return arr;
@@ -508,6 +704,7 @@ function applyFilter(arr) {
 // ═══════════════════════════
 function renderDashboard() {
   const hideSent = document.getElementById('toggle-hide-sent')?.checked ?? true;
+  const recentSent = getRecentSentIds();
   const q = document.getElementById('pipeline-search')?.value.trim().toLowerCase() ?? '';
 
   let pos  = entries.filter(e=>!e.advanceAmount||e.advanceAmount===0);
@@ -549,6 +746,16 @@ function renderDashboard() {
   animStat('stat-pending-sar', pendSar.toLocaleString('en-US',{maximumFractionDigits:0}));
   animStat('stat-hold-count',  holdCnt);
   animStat('stat-sent-week',   sentWk);
+  const qPending=document.getElementById('qov-pending'); if(qPending) qPending.textContent=entries.filter(e=>e.status==='pending').length;
+  const qHold=document.getElementById('qov-hold'); if(qHold) qHold.textContent=holdCnt;
+  const qSent=document.getElementById('qov-sent'); if(qSent) qSent.textContent=sentWk;
+  const qNext=document.getElementById('qov-next-send'); if(qNext) qNext.textContent=dailySendTime||'Off';
+  const pendingNormal=entries.filter(e=>e.status==='pending'&&!isAdvanceEntry(e));
+  const setRouteCount=(id,route)=>{const el=document.getElementById(id);if(el)el.textContent=pendingNormal.filter(e=>getApprovalRoute(e)===route).length;};
+  setRouteCount('route-scm-count','SCM');
+  const fmCount=document.getElementById('route-fm-count'); if(fmCount) fmCount.textContent=pendingNormal.filter(requiresFMApproval).length;
+  setRouteCount('route-gm-count','GM');
+  const routeAdv=document.getElementById('route-adv-count'); if(routeAdv) routeAdv.textContent=entries.filter(e=>e.status==='pending'&&isAdvanceEntry(e)).length;
 
   const badge = e => {
     if (e.status==='hold')    return `<span class="sp hold">⏸ On Hold</span>`;
@@ -567,7 +774,7 @@ function renderDashboard() {
   const poTable  = document.getElementById('po-table');
   const advTable = document.getElementById('adv-table');
   if (poTable) {
-    const sortableKeys = ['suppNo','supplier','po','amount','amountSar','date','status'];
+    const sortableKeys = ['suppNo','supplier','po','amount','amountSar','approval','date','status'];
     poTable.querySelector('thead tr').innerHTML =
       `<th style="width:28px"><input type="checkbox" id="selAllPo" onchange="toggleSelAll('po')"></th>` +
       visPo.map(c=>`<th ${sortableKeys.includes(c.key)?`onclick="sortT('po','${c.key}')"`:''}>${c.label}</th>`).join('') +
@@ -581,15 +788,16 @@ function renderDashboard() {
       `<th style="width:84px"></th>`;
   }
 
-  const emptyPo  = `<tr class="erow"><td colspan="${colspan_po}"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>${q?'No results':'No PO entries yet'}</p><span>${q?'Try a different search':'Fill the form and click Log Entry'}</span></div></td></tr>`;
-  const emptyAdv = `<tr class="erow"><td colspan="${colspan_adv}"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>${q?'No results':'No advance entries yet'}</p><span>${q?'Try a different search':'Check "Advance?" when logging'}</span></div></td></tr>`;
+  const emptyPo  = `<tr class="erow"><td colspan="${colspan_po}"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>${q?'No results':'No PO entries yet'}</p><span>${q?'Try a different search':'Fill the form and click Submit Request'}</span></div></td></tr>`;
+  const emptyAdv = `<tr class="erow"><td colspan="${colspan_adv}"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>${q?'No results':'No advance entries yet'}</p><span>${q?'Try a different search':'Choose Advance Payment or Includes Advance'}</span></div></td></tr>`;
 
   if (poTbody) {
     poTbody.innerHTML = pos.length===0 ? emptyPo : pos.map(e=>{
       const {suppNo,vendorName}=extractSupplier(e.supplier);
-      const rowCls=e.status==='hold'?' class="held-row"':'';
+      const classes=[]; if(e.status==='hold') classes.push('held-row'); if(e.status==='sent') classes.push('sent-row'); if(recentSent.has(e.id)) classes.push('just-sent-row');
+      const rowCls=classes.length?` class="${classes.join(' ')}"`:'';
       const cells = visPo.map(c=>`<td>${getCellHtml(e,c.key,'po')}</td>`).join('');
-      return `<tr${rowCls} style="${e.status==='sent'?'opacity:.5':''}">
+      return `<tr${rowCls}>
         <td><input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()"></td>
         ${cells}
         <td><div class="row-acts">
@@ -607,9 +815,10 @@ function renderDashboard() {
   if (advTbody) {
     advTbody.innerHTML = advs.length===0 ? emptyAdv : advs.map(e=>{
       const {suppNo,vendorName}=extractSupplier(e.supplier);
-      const rowCls=e.status==='hold'?' class="held-row"':'';
+      const classes=[]; if(e.status==='hold') classes.push('held-row'); if(e.status==='sent') classes.push('sent-row'); if(recentSent.has(e.id)) classes.push('just-sent-row');
+      const rowCls=classes.length?` class="${classes.join(' ')}"`:'';
       const cells = visAdv.map(c=>`<td>${getCellHtml(e,c.key,'adv')}</td>`).join('');
-      return `<tr${rowCls} style="${e.status==='sent'?'opacity:.5':''}">
+      return `<tr${rowCls}>
         <td><input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()"></td>
         ${cells}
         <td><div class="row-acts">
@@ -638,20 +847,24 @@ window.toggleSelAll = function(type) {
 };
 
 window.updateSelBtns = function() {
-  const all=document.querySelectorAll('.row-cb:checked');
-  const allAdv=document.querySelectorAll('#advance-tbody .row-cb:checked');
+  const all=[...document.querySelectorAll('.row-cb:checked')];
+  const allAdv=[...document.querySelectorAll('#advance-tbody .row-cb:checked')];
+  const sentSelected=all.filter(cb=>entries.find(e=>e.id===cb.value)?.status==='sent');
+  document.querySelectorAll('.dtable tbody tr').forEach(tr=>tr.classList.toggle('row-selected', !!tr.querySelector('.row-cb:checked')));
   const show=(id,n,cid)=>{
     const el=document.getElementById(id); const ce=document.getElementById(cid); if(!el) return;
     if(n>0){el.classList.add('show');if(ce)ce.textContent=n;}else el.classList.remove('show');
   };
-  show('btn-delete-selected',  all.length,    'selected-count');
-  show('btn-requeue-selected', all.length,    'requeue-count');
-  show('btn-copy-advances',    allAdv.length, 'copy-count');
+  show('btn-delete-selected',  all.length,          'selected-count');
+  show('btn-requeue-selected', sentSelected.length, 'requeue-count');
+  show('btn-copy-advances',    allAdv.length,       'copy-count');
 };
 
 window.requeueSelected = async function() {
-  const ids=Array.from(document.querySelectorAll('.row-cb:checked')).map(cb=>cb.value);
-  if(!ids.length) return;
+  const ids=Array.from(document.querySelectorAll('.row-cb:checked')).map(cb=>cb.value).filter(id=>entries.find(e=>e.id===id)?.status==='sent');
+  if(!ids.length) return toast('Select one or more sent records to re-queue','info');
+  clearRecentlySent(ids);
+  if (DEMO_MODE) { entries.forEach(e=>{if(ids.includes(e.id)){e.is_sent=false;e.on_hold=false;e.status='pending';}}); toast(`Re-queued ${ids.length} records`,'success'); renderDashboard(); return; }
   try {
     const {error}=await supabaseClient.from('entries').update({is_sent:false,on_hold:false}).in('id',ids);
     if(error) throw error;
@@ -664,6 +877,7 @@ window.deleteSelected = async function() {
   const ids=Array.from(document.querySelectorAll('.row-cb:checked')).map(cb=>cb.value);
   if(!ids.length) return;
   if(!confirm(`Delete ${ids.length} selected records?`)) return;
+  if (DEMO_MODE) { entries=entries.filter(e=>!ids.includes(e.id)); toast(`Deleted ${ids.length} records`,'success'); renderDashboard(); return; }
   try {
     const {error}=await supabaseClient.from('entries').delete().in('id',ids);
     if(error) throw error;
@@ -695,6 +909,7 @@ function calculate() {
     advAmtEl.value=0;
     const ac=document.getElementById('advance-amount-cur'); if(ac) ac.value='';
   }
+  updateApprovalRoutePreview();
 }
 
 // ═══════════════════════════
@@ -703,59 +918,45 @@ function calculate() {
 // Uses a per-minute lock stored in supabase settings to prevent
 // multiple tabs or rapid interval ticks from sending twice.
 async function openDispatchPreview() {
-  const pending=entries.filter(e=>e.status==='pending');
-  if (!pending.length) return toast('No pending items to dispatch','info');
-
-  const pos=pending.filter(e=>!e.advanceAmount||e.advanceAmount===0);
-  const advs=pending.filter(e=>e.advanceAmount>0);
-  const totalPo=pos.reduce((s,e)=>s+(e.amountSar||0),0);
-  const totalAdv=advs.reduce((s,e)=>s+(e.advanceAmount||0),0);
-
-  const ts='border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;margin-bottom:14px';
-  const ths='background:#f8fafc;color:#0f172a;padding:5px 7px;border:1px solid #e2e8f0;text-align:left';
-  const tds='padding:5px 7px;border:1px solid #e2e8f0;vertical-align:top';
-  const visPo  = poCols.filter(c=>c.visible && c.key!=='status');
-  const visAdv = advCols.filter(c=>c.visible && c.key!=='status');
-  let html='';
-  if (pos.length) {
-    const hdrs=[...visPo.map(c=>`<th style="${ths}">${c.label}</th>`),`<th style="${ths}">Status</th>`].join('');
-    html+=`<div class="preview-count"><i data-lucide="file-text"></i> ${pos.length} PO Approval${pos.length!==1?'s':''} · Total SAR: <b>${totalPo.toLocaleString()}</b></div>`;
-    html+=`<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
-    pos.forEach(e=>{
-      html+='<tr>'+[...visPo.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),`<td style="${tds}">Pending</td>`].join('')+'</tr>';
-    });
-    html+='</tbody></table>';
-  }
-  if (advs.length) {
-    const hdrs=[...visAdv.map(c=>`<th style="${ths}">${c.label}</th>`),`<th style="${ths}">Status</th>`].join('');
-    html+=`<div class="preview-count" style="margin-top:10px"><i data-lucide="landmark"></i> ${advs.length} Advance${advs.length!==1?'s':''} · Total SAR: <b>${totalAdv.toLocaleString()}</b></div>`;
-    html+=`<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
-    advs.forEach(e=>{
-      html+='<tr>'+[...visAdv.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),`<td style="${tds}">Pending</td>`].join('')+'</tr>';
-    });
-    html+='</tbody></table>';
-  }
-
+  const pending=entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
+  if (!pending.length) return toast('No FM, GM or Advance items to dispatch','info');
+  const groups=getDispatchGroups(pending);
+  const visPo=poCols.filter(c=>c.visible && c.key!=='status');
+  const visAdv=advCols.filter(c=>c.visible && c.key!=='status');
+  const ts='border-collapse:collapse;width:100%;font-size:12px;font-family:Inter,sans-serif;margin-bottom:16px';
+  const ths='background:#f4f7fb;color:#334155;padding:7px 8px;border:1px solid #e2e8f0;text-align:left';
+  const tds='padding:7px 8px;border:1px solid #e2e8f0;vertical-align:top';
+  const section=(title,items,cols,icon,isPo=false)=>{
+    if(!items.length) return '';
+    const emailCols = isPo ? cols.map(c => c.key === 'approval' ? {...c, label:'Approvers'} : c) : cols;
+    const hdrs=[...emailCols.map(c=>`<th style="${ths}">${c.label}</th>`),`<th style="${ths}">Status</th>`].join('');
+    const rows=items.map(e=>'<tr>'+[...emailCols.map(c=>`<td style="${tds}">${isPo && c.key==='approval' ? getEmailApprovers(e) : getCellValue(e,c.key)}</td>`),`<td style="${tds}">Pending</td>`].join('')+'</tr>').join('');
+    return `<div class="preview-count">${icon} ${title} (${items.length})</div><table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>${rows}</tbody></table>`;
+  };
+  const html=
+    section('FM Approval',groups.fm,visPo,'🟦',true)+
+    section('GM Approval',groups.gm,visPo,'🟪',true)+
+    section('Advance Payments',groups.advances,visAdv,'🟧');
   document.getElementById('preview-content').innerHTML=html;
   lucide.createIcons();
   document.getElementById('preview-modal').classList.add('open');
   settingsModal.classList.remove('open');
 }
-
 async function confirmDispatch() {
   document.getElementById('preview-modal').classList.remove('open');
+  if (DEMO_MODE) { const demoIds=entries.filter(e=>e.status==='pending'&&isDispatchEligible(e)).map(e=>e.id); entries.forEach(e=>{if(demoIds.includes(e.id)){e.status='sent';e.is_sent=true;}}); rememberRecentlySent(demoIds); renderDashboard(); toast('Demo dispatch completed — SCM items remain in the app','success'); document.getElementById('success-modal').classList.add('open'); return; }
   await sendEmail(false);
 }
 
 async function sendEmail(isScheduled=false) {
   if (isSending) return;
 
-  const pending=entries.filter(e=>e.status==='pending');
-  if (!pending.length) { if(!isScheduled) toast('Nothing pending to send','info'); return; }
+  let pending=entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
+  if (!pending.length) { if(!isScheduled) toast('No FM, GM or Advance items to send','info'); return false; }
 
   // Double-send guard: for scheduled sends, block if already sent this minute
   const nowMinute = new Date().toISOString().slice(0,16);
-  if (isScheduled && sendEmail._lastMinute === nowMinute) return;
+  if (isScheduled && sendEmail._lastMinute === nowMinute) return false;
   if (isScheduled) sendEmail._lastMinute = nowMinute;
 
   isSending=true;
@@ -766,12 +967,21 @@ async function sendEmail(isScheduled=false) {
     if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings');
 
     ids=pending.map(i=>i.id);
-    // Mark sent BEFORE sending email — prevents retry getting different data
-    const {error:ue}=await supabaseClient.from('entries').update({is_sent:true}).in('id',ids).eq('is_sent',false);
+    // Claim only rows that are still pending. If two users/tabs dispatch together,
+    // only the client that actually claimed a row includes it in the email.
+    const {data:claimed,error:ue}=await supabaseClient.from('entries')
+      .update({is_sent:true}).in('id',ids).eq('is_sent',false).eq('on_hold',false).select('id');
     if(ue) throw ue;
+    const claimedIds=(claimed||[]).map(r=>r.id);
+    pending=pending.filter(e=>claimedIds.includes(e.id));
+    ids=claimedIds;
+    if (!pending.length) {
+      await loadEntries();
+      return true;
+    }
 
-    const pos=pending.filter(e=>!e.advanceAmount||e.advanceAmount===0);
-    const advs=pending.filter(e=>e.advanceAmount>0);
+    const groups=getDispatchGroups(pending);
+    const fm=groups.fm, gm=groups.gm, advs=groups.advances;
     const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
     const ts='border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;';
     const ths='background:#f8fafc;color:#0f172a;padding:6px 8px;border:1px solid #e2e8f0;text-align:left;';
@@ -781,110 +991,76 @@ async function sendEmail(isScheduled=false) {
     const visPo  = poCols.filter(c=>c.visible && c.key!=='status');  // status added separately at end
     const visAdv = advCols.filter(c=>c.visible && c.key!=='status');
 
-    let poH='', advH='';
-    if (pos.length) {
-      const hdrs = [...visPo.map(c=>c.label), 'Status'].map(h=>`<th style="${ths}">${h}</th>`).join('');
-      poH = `<h3 style="font-family:sans-serif;margin:14px 0 6px">📅 PO Approvals (${pos.length})</h3>`;
-      poH += `<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
-      pos.forEach(e=>{
-        const cells = [...visPo.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),
-                       `<td style="${tds}">${getCellValue(e,'status')}</td>`].join('');
-        poH += `<tr>${cells}</tr>`;
-      });
-      poH += '</tbody></table>';
-    }
-    if (advs.length) {
-      const hdrs = [...visAdv.map(c=>c.label), 'Status'].map(h=>`<th style="${ths}">${h}</th>`).join('');
-      advH = `<h3 style="font-family:sans-serif;margin:14px 0 6px">💰 Advance Payments (${advs.length})</h3>`;
-      advH += `<table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>`;
-      advs.forEach(e=>{
-        const cells = [...visAdv.map(c=>`<td style="${tds}">${getCellValue(e,c.key)}</td>`),
-                       `<td style="${tds}">${getCellValue(e,'status')}</td>`].join('');
-        advH += `<tr>${cells}</tr>`;
-      });
-      advH += '</tbody></table>';
-    }
-    const totalPo=pos.reduce((s,e)=>s+(e.amountSar||0),0);
+    const buildSection=(title,items,cols,accent,isPo=false)=>{
+      if(!items.length) return '';
+      const emailCols = isPo ? cols.map(c => c.key === 'approval' ? {...c, label:'Approvers'} : c) : cols;
+      const hdrs=[...emailCols.map(c=>c.label),'Status'].map(h=>`<th style="${ths};background:${accent}12;color:#0f172a">${h}</th>`).join('');
+      const rows=items.map(e=>{
+        const cells=[...emailCols.map(c=>`<td style="${tds}">${isPo && c.key==='approval' ? getEmailApprovers(e) : getCellValue(e,c.key)}</td>`),`<td style="${tds}">${getCellValue(e,'status')}</td>`].join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+      const total=items.reduce((s,e)=>s+(isAdvanceEntry(e)?Number(e.advanceAmount||0):Number(e.amountSar||0)),0);
+      return `<h3 style="font-family:sans-serif;margin:18px 0 7px;color:${accent}">${title} (${items.length}) · ${total.toLocaleString()} SAR</h3><table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>${rows}</tbody></table>`;
+    };
+    // Required order: FM → GM → Advances
+    const fmH=buildSection('FM Approval',fm,visPo,'#2563eb',true);
+    const gmH=buildSection('GM Approval',gm,visPo,'#7c3aed',true);
+    const advH=buildSection('Advance Payments',advs,visAdv,'#d97706');
+    const totalFm=fm.reduce((s,e)=>s+(e.amountSar||0),0);
+    const totalGm=gm.reduce((s,e)=>s+(e.amountSar||0),0);
     const totalAdv=advs.reduce((s,e)=>s+(e.advanceAmount||0),0);
+    // Unique amount total avoids double-counting GM POs that intentionally appear in FM + GM.
+    const uniquePoTotal=pending.filter(e=>!isAdvanceEntry(e)).reduce((s,e)=>s+(Number(e.amountSar)||0),0);
+    const uniqueGrandTotal=uniquePoTotal+totalAdv;
 
     // Send to all manager emails — primary gets to_email, rest go to CC
     const primaryMgr = managerEmails[0] || managerEmail;
     const extraMgrs  = managerEmails.slice(1);
     const allCC      = [...extraMgrs, ...ccEmails].filter(Boolean).join(', ');
 
-    const subject  = `GM Procurement Approval Request - ${today}`;
-    const fullHtml = `<!DOCTYPE html><html><body style="font-family:sans-serif;font-size:13px;color:#0f172a;max-width:900px;margin:0 auto;padding:20px">
-      <h2 style="margin:0 0 4px;font-size:16px">GM Procurement Approval Request</h2>
-      <p style="color:#64748b;font-size:12px;margin:0 0 16px">${today} · ${pending.length} item${pending.length!==1?'s':''} pending</p>
-      ${poH}${advH}
-      <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
-      <table style="font-size:12px;color:#64748b;border-collapse:collapse">
-        <tr><td style="padding-right:24px">Total PO SAR ⃁</td><td style="font-weight:600;color:#0f172a">${totalPo.toLocaleString()}</td></tr>
-        <tr><td style="padding-right:24px">Total Advance SAR ⃁</td><td style="font-weight:600;color:#0f172a">${totalAdv.toLocaleString()}</td></tr>
-        <tr><td style="padding-right:24px;font-weight:600">Grand Total SAR ⃁</td><td style="font-weight:700;color:#4f46e5;font-size:14px">${(totalPo+totalAdv).toLocaleString()}</td></tr>
-      </table>
+    const subject  = `Procurement Approval Request - ${today}`;
+    const fullHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:13px;color:#0f172a;max-width:1100px;margin:0 auto;padding:24px;background:#f8fafc">
+      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:22px">
+        <h2 style="margin:0 0 4px;font-size:18px">Procurement Approval Request</h2>
+        <p style="color:#64748b;font-size:12px;margin:0 0 16px">${today} · FM ${fm.length} · GM ${gm.length} · Advances ${advs.length}</p>
+        ${fmH}${gmH}${advH}
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:22px 0">
+        <table style="font-size:12px;color:#64748b;border-collapse:collapse">
+          <tr><td style="padding:3px 28px 3px 0">FM Total SAR</td><td style="font-weight:700;color:#2563eb">${totalFm.toLocaleString()}</td></tr>
+          <tr><td style="padding:3px 28px 3px 0">GM Total SAR</td><td style="font-weight:700;color:#7c3aed">${totalGm.toLocaleString()}</td></tr>
+          <tr><td style="padding:3px 28px 3px 0">Advance Total SAR</td><td style="font-weight:700;color:#d97706">${totalAdv.toLocaleString()}</td></tr>
+          <tr><td style="padding:5px 28px 0 0;font-weight:700">Unique Request Total SAR</td><td style="font-weight:800;color:#0f172a;font-size:14px">${uniqueGrandTotal.toLocaleString()}</td></tr>
+        </table>
+      </div>
     </body></html>`;
 
-    if (DISPATCH_METHOD === 'powerautomate') {
-      // ── Power Automate path ──
-      if (!PA_WEBHOOK_URL) throw new Error('Power Automate webhook URL not set in Settings → Connection');
-      const paBody = JSON.stringify({
-        subject_line: subject,
-        to_email:     primaryMgr,
-        cc_email:     allCC,
-        html_body:    fullHtml,
-        plain_text:   `Procurement Approval Request - ${today}. ${pending.length} items. Total SAR: ${(totalPo+totalAdv).toLocaleString()}`
-      });
-      // Power Platform environment URLs need different handling than Logic Apps URLs
-      const isPowerPlatform = PA_WEBHOOK_URL.includes('environment.api.powerplatform') || PA_WEBHOOK_URL.includes('powerautomate.com');
-
-      const resp = await fetch(PA_WEBHOOK_URL, {
-        method: 'POST',
-        mode: isPowerPlatform ? 'no-cors' : 'cors',
-        headers: isPowerPlatform
-          ? { 'Content-Type': 'application/json' }
-          : { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: paBody
-      });
-
-      // no-cors mode returns opaque response (status 0) — treat as success
-      // since Power Platform accepted the request if no network error thrown
-      if (isPowerPlatform && resp.type === 'opaque') {
-        toast('Dispatched via Power Automate ✓', 'success');
-        document.getElementById('success-modal').classList.add('open');
-        isSending = false;
-        await loadEntries();
-        return;
-      }
-      // Power Automate returns 200 or 202 on success — both are fine
-      if (resp.status !== 200 && resp.status !== 202 && resp.status !== 204) {
-        let errTxt = '';
-        try { errTxt = await resp.text(); } catch {}
-        // 401 = URL missing sig parameter or expired
-        if (resp.status === 401) throw new Error('Power Automate: Unauthorized (401) — copy the full webhook URL including the &sig= parameter at the end');
-        // 403 = auth scheme mismatch
-        if (resp.status === 403) throw new Error('Power Automate: Forbidden (403) — check the webhook URL is complete and the flow is enabled');
-        throw new Error(`Power Automate returned ${resp.status}${errTxt?' — '+errTxt.slice(0,200):''}`);
-      }
-    } else {
-      // ── EmailJS path ──
-      if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings → Connection');
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        subject_line: subject,
-        to_email:     primaryMgr,
-        cc_email:     allCC,
-        po_table:     poH,
-        adv_table:    advH,
-        html_body:    fullHtml,
-        summary_count:pending.length, po_count:pos.length, adv_count:advs.length,
-        total_po_sar: totalPo.toLocaleString(),
-        total_adv_sar:totalAdv.toLocaleString(),
-        total_sar:    (totalPo+totalAdv).toLocaleString()
-      }, EMAILJS_PUBLIC_KEY);
+    // ── EmailJS dispatch (V3.1: only supported provider) ──
+    if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) {
+      throw new Error('EmailJS keys missing in Settings → Connection');
     }
+    if (typeof emailjs === 'undefined') {
+      throw new Error('EmailJS library not loaded. Check your internet connection.');
+    }
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      subject_line: subject,
+      to_email:     primaryMgr,
+      cc_email:     allCC,
+      po_table:     fmH + gmH,
+      fm_table:     fmH,
+      gm_table:     gmH,
+      adv_table:    advH,
+      html_body:    fullHtml,
+      summary_count:pending.length, fm_count:fm.length, gm_count:gm.length, adv_count:advs.length,
+      total_fm_sar: totalFm.toLocaleString(),
+      total_gm_sar: totalGm.toLocaleString(),
+      total_adv_sar:totalAdv.toLocaleString(),
+      total_sar:    uniqueGrandTotal.toLocaleString()
+    }, EMAILJS_PUBLIC_KEY);
 
     toast('Dispatched successfully!','success');
     document.getElementById('success-modal').classList.add('open');
+    await loadEntries();
+    return true;
   } catch(err) {
     // Rollback: un-mark any entries we already flipped to sent
     if(ids && ids.length) {
@@ -893,6 +1069,8 @@ async function sendEmail(isScheduled=false) {
     const errMsg = err?.text || err?.message || err?.status || JSON.stringify(err) || 'Unknown error';
     console.error('Dispatch error full object:', err);
     toast('Dispatch failed: ' + errMsg, 'error');
+    if (isScheduled) sendEmail._lastMinute = '';
+    return false;
   } finally { isSending=false; }
 }
 
@@ -915,24 +1093,33 @@ async function checkSchedule() {
   if (minute === lastScheduledMinute) return;
   if (today  === lastScheduledDate)   return;
 
-  // Time matches configured send time
+  // Auto-dispatch only during the configured minute.
+  // Opening/reloading the app after the scheduled time must NOT trigger a catch-up send.
   if (t !== dailySendTime) return;
 
   // Check freshly — reload from Supabase to avoid stale in-memory state
-  let hasPending = entries.some(e => e.status === 'pending');
+  let hasPending = entries.some(e => e.status === 'pending' && isDispatchEligible(e));
   if (!hasPending && supabaseClient) {
     try {
       const { data } = await supabaseClient.from('entries')
-        .select('is_sent,on_hold').eq('is_sent',false).eq('on_hold',false).limit(1);
-      hasPending = data && data.length > 0;
+        .select('is_sent,on_hold,amount_sar,advance_amount').eq('is_sent',false).eq('on_hold',false).limit(50);
+      hasPending = !!(data||[]).some(r=>Number(r.advance_amount||0)>0 || Number(r.amount_sar||0)>=10000);
     } catch {}
   }
 
   if (!hasPending) return;
 
   lastScheduledMinute = minute;
-  lastScheduledDate   = today;
-  await sendEmail(true);
+  const success = await sendEmail(true);
+  if (success) {
+    lastScheduledDate = today;
+    try {
+      await supabaseClient.from('settings').upsert([{key:'last_dispatch_date',value:today}],{onConflict:'key'});
+    } catch {}
+  } else {
+    // Allow another attempt later in the same minute/day after a failure.
+    lastScheduledMinute = '';
+  }
 }
 
 // ═══════════════════════════
@@ -990,7 +1177,7 @@ function exportToExcel(){
   const esc=s=>String(s).replace(/[<>&'"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c]));
   const row=cells=>`<Row>${cells.map(c=>`<Cell><Data ss:Type="${typeof c==='number'?'Number':'String'}">${esc(c)}</Data></Cell>`).join('')}</Row>`;
   let xml=`<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`;
-  xml+=`<Worksheet ss:Name="PO Approvals"><Table>${row(['Date','Description','Category','PR/SO #','WO/SO #','PO #','Supplier','Amount','Currency','SAR','Notes','Status'])}`;
+  xml+=`<Worksheet ss:Name="PO Approvals"><Table>${row(['Date','Description','Category','PR #','WO/SO #','PO #','Supplier','Amount','Currency','SAR','Notes','Status'])}`;
   pos.forEach(e=>xml+=row([e.date,e.description||'',e.category||'',e.prSo||'',e.woSo||'',e.po||'',e.supplier||'',e.amount,e.currency,e.amountSar,e.notes||'',e.status]));
   xml+=`</Table></Worksheet><Worksheet ss:Name="Advances"><Table>${row(['Date','Description','Category','PO #','Supplier','Amount','Currency','Adv%','Adv(Cur)','Adv(SAR)','Notes','Status'])}`;
   advs.forEach(e=>xml+=row([e.date,e.description||'',e.category||'',e.po||'',e.supplier||'',e.amount,e.currency,e.advancePercent,(e.amount*e.advancePercent/100),e.advanceAmount,e.notes||'',e.status]));
@@ -1037,19 +1224,27 @@ window.removeCcTag=function(i){ccEmails.splice(i,1);renderCcTags();saveSettings(
 // ═══════════════════════════
 //  THEME
 // ═══════════════════════════
-function initTheme(){
-  const t=localStorage.getItem('theme_preference')||'dark';
-  document.documentElement.setAttribute('data-theme',t);
+function updateThemeControl(theme){
   const ico=document.getElementById('theme-icon');
-  if(ico){ico.setAttribute('data-lucide',t==='dark'?'sun':'moon');lucide.createIcons();}
+  const label=document.getElementById('theme-label');
+  const btn=document.getElementById('btn-theme-toggle');
+  const dark=theme==='dark';
+  if(ico) ico.setAttribute('data-lucide',dark?'sun':'moon');
+  if(label) label.textContent=dark?'Light':'Dark';
+  if(btn) btn.title=dark?'Switch to light mode':'Switch to dark mode';
+  lucide.createIcons();
+}
+function initTheme(){
+  const t=localStorage.getItem('theme_preference')||'light';
+  document.documentElement.setAttribute('data-theme',t);
+  updateThemeControl(t);
 }
 function toggleTheme(){
-  const cur=document.documentElement.getAttribute('data-theme')||'dark';
+  const cur=document.documentElement.getAttribute('data-theme')||'light';
   const nxt=cur==='dark'?'light':'dark';
   document.documentElement.setAttribute('data-theme',nxt);
   localStorage.setItem('theme_preference',nxt);
-  const ico=document.getElementById('theme-icon');
-  if(ico){ico.setAttribute('data-lucide',nxt==='dark'?'sun':'moon');lucide.createIcons();}
+  updateThemeControl(nxt);
 }
 
 // ═══════════════════════════
@@ -1061,6 +1256,8 @@ function saveDraft(){
   const d={};
   DRAFT_FIELDS.forEach(id=>{const el=document.getElementById(id);if(el)d[id]=el.value;});
   d['has-advance']=hasAdvEl?.checked;
+  d['pr-so-na']=document.getElementById('pr-so-na')?.checked || false;
+  d['wo-so-na']=document.getElementById('wo-so-na')?.checked || false;
   d['advance-percent']=advPctEl?.value;
   d['custom-percent']=custPctEl?.value;
   sessionStorage.setItem('approval_form_draft',JSON.stringify(d));
@@ -1070,6 +1267,8 @@ function restoreDraft(){
     const d=JSON.parse(sessionStorage.getItem('approval_form_draft')||'{}');
     if(!Object.keys(d).length) return;
     DRAFT_FIELDS.forEach(id=>{const el=document.getElementById(id);if(el&&d[id]!==undefined)el.value=d[id];});
+    setNAField('pr-so-number','pr-so-na',!!d['pr-so-na'] || String(d['pr-so-number']||'').toUpperCase()==='N/A', false);
+    setNAField('wo-so-number','wo-so-na',!!d['wo-so-na'] || String(d['wo-so-number']||'').toUpperCase()==='N/A', false);
     if(hasAdvEl&&d['has-advance']) hasAdvEl.checked=d['has-advance'];
     if(advPctEl&&d['advance-percent']) advPctEl.value=d['advance-percent'];
     if(custPctEl&&d['custom-percent']) custPctEl.value=d['custom-percent'];
@@ -1226,6 +1425,17 @@ form.addEventListener('change', saveDraft);
 form.addEventListener('submit', ()=>setTimeout(()=>sessionStorage.removeItem('approval_form_draft'),1500));
 
 amtEl.addEventListener('input',calculate);
+document.getElementById('po-number')?.addEventListener('input',()=>{
+  const po=gv('po-number');
+  const category=document.getElementById('category');
+  if (isCapexPO(po)) {
+    if (category && (!category.value || category.dataset.autoCapex==='1')) { category.value='Capex'; category.dataset.autoCapex='1'; }
+  } else if (category?.dataset.autoCapex==='1') {
+    category.value=''; delete category.dataset.autoCapex;
+  }
+  updateApprovalRoutePreview();
+});
+document.getElementById('category')?.addEventListener('change',e=>{ if(e.target.dataset.autoCapex==='1' && e.target.value!=='Capex') delete e.target.dataset.autoCapex; });
 curEl.addEventListener('change',calculate);
 typeEl.addEventListener('change',calculate);
 hasAdvEl.addEventListener('change',calculate);
@@ -1234,6 +1444,9 @@ advPctEl.addEventListener('change',()=>{
   calculate();
 });
 custPctEl.addEventListener('input',calculate);
+
+document.getElementById('pr-so-na')?.addEventListener('change',e=>{ setNAField('pr-so-number','pr-so-na',e.target.checked); saveDraft(); });
+document.getElementById('wo-so-na')?.addEventListener('change',e=>{ setNAField('wo-so-number','wo-so-na',e.target.checked); saveDraft(); });
 
 document.getElementById('btn-settings')?.addEventListener('click',()=>settingsModal.classList.add('open'));
 document.getElementById('btn-close-settings')?.addEventListener('click',()=>{
@@ -1377,6 +1590,7 @@ const PO_COLS_DEFAULT = [
   {key:'amount',    label:'Amount',      visible:true},
   {key:'currency',  label:'Cur',         visible:true},
   {key:'amountSar', label:'SAR ⃁',      visible:true},
+  {key:'approval',  label:'Approval',    visible:true},
   {key:'notes',     label:'Notes',       visible:true},
   {key:'date',      label:'Date',        visible:true},
   {key:'description',label:'Description',visible:true},
@@ -1592,21 +1806,11 @@ async function checkManagerEmail() {
 }
 
 async function checkEmailJS() {
-  if (DISPATCH_METHOD === 'powerautomate') {
-    if (!PA_WEBHOOK_URL) return { status:'fail', detail:'Power Automate webhook URL not set. Add it in Connection tab.' };
-    // Quick reachability check — OPTIONS is CORS-safe
-    try {
-      await fetch(PA_WEBHOOK_URL, { method:'OPTIONS', mode:'no-cors' });
-      return { status:'ok', detail:'Power Automate webhook URL is configured.' };
-    } catch {
-      return { status:'warn', detail:'Webhook URL set but could not reach it — verify it is correct and the flow is active.' };
-    }
-  }
   if (!EMAILJS_SERVICE_ID) return { status:'fail', detail:'EmailJS Service ID missing. Add it in Connection tab.' };
   if (!EMAILJS_TEMPLATE_ID) return { status:'fail', detail:'EmailJS Template ID missing. Add it in Connection tab.' };
   if (!EMAILJS_PUBLIC_KEY)  return { status:'fail', detail:'EmailJS Public Key missing. Add it in Connection tab.' };
   if (typeof emailjs === 'undefined') return { status:'fail', detail:'EmailJS library not loaded. Check your internet connection.' };
-  return { status:'ok', detail:`EmailJS ready · Service: ${EMAILJS_SERVICE_ID}` };
+  return { status:'ok', detail:`EmailJS ready · Service: ${EMAILJS_SERVICE_ID} · Template: ${EMAILJS_TEMPLATE_ID}` };
 }
 
 async function checkScheduleConfig() {
@@ -1669,7 +1873,7 @@ window.addCustomColumn = function() {
 // ═══════════════════════════
 //  DISPATCH METHOD UI
 // ═══════════════════════════
-function updateDispatchMethodUI(method) {
+function updateDispatchMethodUI(method='emailjs') {
   const ejsSection = document.getElementById('emailjs-section');
   const paSection  = document.getElementById('pa-section');
   if (!ejsSection || !paSection) return;

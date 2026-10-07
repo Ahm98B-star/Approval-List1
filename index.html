@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GM Procurement · Approvals</title>
+  <title>Procurement Flow V3 · Approval Routing</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -12,65 +12,13 @@
 <body>
 <div class="app" id="app">
 
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="sidebar-inner">
-      <div class="brand">
-        <div class="brand-icon"><i data-lucide="shield-check"></i></div>
-        <div><div class="brand-name">GM Procurement</div><div class="brand-sub">Approval System</div></div>
-      </div>
-
-      <div class="ss">
-        <div class="ssl-row">
-          <span class="ssl">Dispatch</span>
-          <button class="email-lock-btn" id="email-lock-btn" onclick="toggleEmailLock()" title="Email settings locked">
-            <i data-lucide="lock" id="email-lock-icon"></i>
-          </button>
-        </div>
-
-        <!-- LOCKED STATE -->
-        <div id="email-locked-view" class="email-locked-view">
-          <div class="locked-badge"><i data-lucide="lock"></i> Email settings are protected</div>
-        </div>
-
-        <!-- UNLOCKED STATE (hidden by default) -->
-        <div id="email-unlocked-view" style="display:none">
-          <div class="sf">
-            <label>Manager Emails</label>
-            <div id="mgr-emails-sidebar" class="mgr-sidebar-list"></div>
-            <button class="btn btn-ghost fw" style="margin-top:4px;font-size:.7rem;padding:4px 8px" onclick="switchSettingsTab('email');document.getElementById('settings-modal').classList.add('open')">
-              <i data-lucide="edit-3"></i> Edit in Settings
-            </button>
-          </div>
-        </div>
-
-        <div class="sf"><span id="daily-schedule-text" class="sched-badge"><i data-lucide="clock"></i>&nbsp;Auto-Dispatch: Pending…</span></div>
-      </div>
-
-      <div class="ss s-stats">
-        <div class="ssl">Overview</div>
-        <div class="mstat"><div class="msi blue"><i data-lucide="file-text"></i></div><div class="msb"><span class="msv" id="stat-po-count">0</span><span class="msl">PO Approvals</span></div></div>
-        <div class="mstat"><div class="msi purple"><i data-lucide="landmark"></i></div><div class="msb"><span class="msv" id="stat-adv-count">0</span><span class="msl">Advances</span></div></div>
-        <div class="mstat"><div class="msi amber"><i data-lucide="clock"></i></div><div class="msb"><span class="msv" id="stat-pending-sar">0</span><span class="msl">Pending SAR ⃁</span></div></div>
-        <div class="mstat"><div class="msi hold"><i data-lucide="pause-circle"></i></div><div class="msb"><span class="msv" id="stat-hold-count">0</span><span class="msl">On Hold</span></div></div>
-        <div class="mstat"><div class="msi green"><i data-lucide="send"></i></div><div class="msb"><span class="msv" id="stat-sent-week">0</span><span class="msl">Sent This Week</span></div></div>
-      </div>
-
-      <div class="s-footer">
-        <button id="btn-theme-toggle" class="s-btn"><i data-lucide="moon" id="theme-icon"></i><span>Toggle Theme</span></button>
-        <button id="btn-settings" class="s-btn"><i data-lucide="settings"></i><span>Settings</span></button>
-      </div>
-    </div>
-  </aside>
-
   <!-- MAIN -->
   <div class="main-wrap">
 
     <!-- TOPBAR -->
     <header class="topbar">
       <div class="tb-l">
-        <button class="ib" id="btn-sb-toggle" title="Sidebar (⌘B)"><i data-lucide="panel-left"></i></button>
-        <span class="pg-title">Active Pipeline</span>
+        <div class="page-heading"><span class="pg-title">Approval Control Center</span><small>Smart routing by SAR value</small></div>
         <span id="po-date" class="tb-date"></span>
       </div>
       <div class="tb-m">
@@ -86,12 +34,14 @@
       <div class="tb-r">
         <label class="hide-tog"><input type="checkbox" id="toggle-hide-sent" onchange="renderDashboard()" checked><span>Hide Sent</span></label>
         <div class="tb-sep"></div>
-        <button id="btn-requeue-selected" class="tb-act"       onclick="requeueSelected()"><i data-lucide="rotate-ccw"></i> Re-Queue <span id="requeue-count">0</span></button>
+        <button id="btn-requeue-selected" class="tb-act" onclick="requeueSelected()" title="Select sent rows, then click Re-Queue"><i data-lucide="rotate-ccw"></i> Re-Queue <span id="requeue-count">0</span></button>
         <button id="btn-copy-advances"    class="tb-act green" onclick="copyAdvances()"><i data-lucide="clipboard"></i> Copy <span id="copy-count">0</span></button>
         <button id="btn-delete-selected"  class="tb-act red"   onclick="deleteSelected()"><i data-lucide="trash-2"></i> Delete <span id="selected-count">0</span></button>
         <div class="tb-sep"></div>
-        <button class="ib" id="btn-form-toggle" title="Toggle form"><i data-lucide="sidebar-close"></i></button>
-        <button class="ib" id="btn-maximize"    title="Maximize tables (⌘⇧M)"><i data-lucide="maximize-2"></i></button>
+        <button class="theme-toggle" id="btn-theme-toggle" title="Toggle dark mode" type="button">
+          <i data-lucide="moon" id="theme-icon"></i><span id="theme-label">Dark</span>
+        </button>
+        <button class="ib" id="btn-settings" title="Settings"><i data-lucide="settings"></i></button>
       </div>
     </header>
 
@@ -103,37 +53,47 @@
         <div class="form-inner">
           <div class="fhead">
             <div class="fhead-icon"><i data-lucide="plus-circle"></i></div>
-            <h2 id="form-title">New Record</h2>
-            <span class="date-chip">Date: <span id="po-date-form">…</span></span>
+            <h2 id="form-title">New Approval Request</h2>
           </div>
 
-          <div class="edit-banner" id="edit-banner"><i data-lucide="edit-3"></i> Editing — changes will update the database</div>
+          <div class="form-helper form-helper-compact"><i data-lucide="sparkles"></i><span>Saved requests stay <b>Pending</b> until dispatch.</span></div>
+          <div class="edit-banner" id="edit-banner"><i data-lucide="edit-3"></i> Editing this request — Save Changes when finished</div>
           <div class="hold-banner" id="hold-banner"><i data-lucide="pause-circle"></i> This entry is On Hold — won't be dispatched</div>
 
           <form id="approval-form">
             <div class="fr">
               <div class="fb">
-                <div class="flrow">
-                  <span class="flbl">Type</span>
-                  <label class="inline-chk" for="has-advance"><input type="checkbox" id="has-advance"> Advance?</label>
-                </div>
+                <span class="flbl">Request Type</span>
                 <select id="approval-type" required>
                   <option value="PO Approval">PO Approval</option>
-                  <option value="Advance Approval">Advance Approval</option>
+                  <option value="Advance Approval">Advance Payment Only</option>
                 </select>
+                <label class="advance-toggle" for="has-advance"><input type="checkbox" id="has-advance"><span>Include an advance payment</span></label>
               </div>
-              <div class="fb"><label for="pr-so-number">PR / SO #</label><input type="text" id="pr-so-number" placeholder="PR/SO #"></div>
+              <div class="fb">
+                <div class="field-label-row">
+                  <label for="pr-so-number">PR # <span class="req">*</span></label>
+                  <label class="na-toggle" for="pr-so-na"><input type="checkbox" id="pr-so-na"><span>N/A</span></label>
+                </div>
+                <input type="text" id="pr-so-number" placeholder="PR #" required>
+              </div>
             </div>
 
             <div class="fr">
               <div class="fb"><label for="po-number">PO Number <span class="req">*</span></label><input type="text" id="po-number" placeholder="PO #" required></div>
-              <div class="fb"><label for="wo-so-number">WO / SO #</label><input type="text" id="wo-so-number" placeholder="WO/SO #"></div>
+              <div class="fb">
+                <div class="field-label-row">
+                  <label for="wo-so-number">WO / SO # <span class="req">*</span></label>
+                  <label class="na-toggle" for="wo-so-na"><input type="checkbox" id="wo-so-na"><span>N/A</span></label>
+                </div>
+                <input type="text" id="wo-so-number" placeholder="WO/SO #" required>
+              </div>
             </div>
 
             <hr class="fdiv">
 
             <div class="fr">
-              <div class="fb"><label for="description">Description</label><input type="text" id="description" placeholder="Short summary…"></div>
+              <div class="fb"><label for="description">Description <span class="req">*</span></label><input type="text" id="description" placeholder="What is being purchased?" required></div>
               <div class="fb">
                 <label for="category">Category <span class="req">*</span></label>
                 <select id="category" required>
@@ -159,25 +119,27 @@
               </div>
             </div>
 
-            <div class="fr">
-              <div class="fb">
-                <label for="amount">Amount</label>
-                <div class="amt-row">
-                  <input type="number" step="0.01" id="amount" placeholder="0.00" required>
-                  <select id="currency" class="cur-sel">
-                    <option value="SAR">⃁ SAR</option>
-                    <option value="USD">USD</option><option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option><option value="AED">AED</option>
-                    <option value="BHD">BHD</option><option value="KWD">KWD</option>
-                    <option value="OMR">OMR</option><option value="QAR">QAR</option>
-                    <option value="CNY">CNY</option>
-                  </select>
-                </div>
+            <div class="fr money-fr">
+              <div class="fb money-amount">
+                <label for="amount">Amount <span class="req">*</span></label>
+                <input type="number" step="0.01" id="amount" placeholder="0.00" required>
               </div>
-              <div class="fb">
+              <div class="fb money-currency">
+                <label for="currency">Currency</label>
+                <select id="currency" class="cur-sel">
+                  <option value="SAR">⃁ SAR</option>
+                  <option value="USD">USD</option><option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option><option value="AED">AED</option>
+                  <option value="BHD">BHD</option><option value="KWD">KWD</option>
+                  <option value="OMR">OMR</option><option value="QAR">QAR</option>
+                  <option value="CNY">CNY</option>
+                </select>
+              </div>
+              <div class="fb money-sar">
                 <label>SAR Equivalent ⃁</label>
                 <input type="number" id="amount-sar" readonly class="rf">
                 <div id="rate-hint" class="rate-hint"></div>
+                <div id="approval-route-preview" class="approval-route-preview route-scm"><span class="route-dot"></span><span><b>SCM approval</b><small>Below 10,000 SAR</small></span></div>
               </div>
             </div>
 
@@ -196,13 +158,13 @@
             </div>
 
             <div class="fr one">
-              <div class="fb"><label for="notes">Notes</label><textarea id="notes" placeholder="Any context for the GM…"></textarea></div>
+              <div class="fb"><label for="notes">Notes</label><textarea id="notes" placeholder="Any context for the approver…"></textarea></div>
             </div>
 
             <div class="form-acts">
-              <button type="submit" id="btn-log-entry" class="btn btn-pri"><i data-lucide="database"></i> Log Entry</button>
-              <button type="button" id="btn-save-hold" class="btn btn-hold"><i data-lucide="pause-circle"></i> Save for Later</button>
-              <button type="button" id="btn-cancel-edit" class="btn btn-ghost" style="display:none"><i data-lucide="x"></i> Cancel</button>
+              <button type="submit" id="btn-log-entry" class="btn btn-pri"><i data-lucide="send"></i> Submit Request</button>
+              <button type="button" id="btn-save-hold" class="btn btn-hold"><i data-lucide="pause-circle"></i> Hold / Finish Later</button>
+              <button type="button" id="btn-cancel-edit" class="btn btn-ghost" style="display:none"><i data-lucide="x"></i> Cancel Edit</button>
             </div>
           </form>
         </div>
@@ -211,12 +173,30 @@
       <!-- TABLES PANEL -->
       <section class="tpanel">
 
+
+        <div class="route-overview">
+          <button class="route-card scm" onclick="setFilter('scm')"><span>SCM</span><strong id="route-scm-count">0</strong><small>&lt; 10K SAR · standard PO</small></button>
+          <button class="route-card fm" onclick="setFilter('fm')"><span>FM</span><strong id="route-fm-count">0</strong><small>10K+ · includes GM chain</small></button>
+          <button class="route-card gm" onclick="setFilter('gm')"><span>GM</span><strong id="route-gm-count">0</strong><small>&gt; 50K SAR or CAPEX PO 2…</small></button>
+          <button class="route-card adv" onclick="document.getElementById('sf-po').classList.remove('on');sfState.po=false;document.getElementById('sf-adv').classList.add('on');sfState.adv=true;setFilter('pending')"><span>Advances</span><strong id="route-adv-count">0</strong><small>Separate email list</small></button>
+        </div>
+        <div class="queue-overview">
+          <div class="qov-item"><span class="qov-label">Pending</span><strong id="qov-pending">0</strong></div>
+          <div class="qov-item"><span class="qov-label">On Hold</span><strong id="qov-hold">0</strong></div>
+          <div class="qov-item"><span class="qov-label">Sent This Week</span><strong id="qov-sent">0</strong></div>
+          <div class="qov-next"><i data-lucide="clock-3"></i><span>Next automatic dispatch</span><strong id="qov-next-send">--:--</strong></div>
+        </div>
+
         <div class="filter-bar">
           <span class="fc-lbl">Filter</span>
           <button class="fchip on"  id="fc-all"     onclick="setFilter('all')"><i data-lucide="layers"></i> All</button>
           <button class="fchip"     id="fc-pending" onclick="setFilter('pending')"><i data-lucide="clock"></i> Pending</button>
           <button class="fchip hold-chip" id="fc-hold" onclick="setFilter('hold')"><i data-lucide="pause-circle"></i> On Hold</button>
           <button class="fchip"     id="fc-sent"    onclick="setFilter('sent')"><i data-lucide="check-circle"></i> Sent</button>
+          <button class="fchip justsent-chip" id="fc-justsent" onclick="setFilter('justsent')"><i data-lucide="sparkles"></i> Just Sent</button>
+          <button class="fchip" id="fc-scm" onclick="setFilter('scm')">SCM</button>
+          <button class="fchip" id="fc-fm" onclick="setFilter('fm')">FM</button>
+          <button class="fchip" id="fc-gm" onclick="setFilter('gm')">GM</button>
           <button class="fchip"     id="fc-today"   onclick="setFilter('today')"><i data-lucide="calendar"></i> Today</button>
           <button class="fchip"     id="fc-week"    onclick="setFilter('week')"><i data-lucide="calendar-days"></i> This Week</button>
         </div>
@@ -224,7 +204,7 @@
         <!-- PO Table -->
         <div class="dcard">
           <div class="dchead">
-            <div class="dctitle"><i data-lucide="file-text"></i> PO Approvals <span class="cpill" id="po-count">0</span></div>
+            <div class="dctitle"><i data-lucide="file-text"></i> PO Approval Routing <span class="cpill" id="po-count">0</span></div>
           </div>
           <div class="twrap">
             <table class="dtable" id="po-table">
@@ -244,7 +224,7 @@
                 <th style="width:84px"></th>
               </tr></thead>
               <tbody id="po-tbody">
-                <tr class="erow"><td colspan="13"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>No PO entries yet</p><span>Fill the form and click Log Entry</span></div></td></tr>
+                <tr class="erow"><td colspan="13"><div class="empty"><i data-lucide="file-text" class="e-ico"></i><p>No PO entries yet</p><span>Fill the form and click Submit Request</span></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -275,7 +255,7 @@
                 <th style="width:84px"></th>
               </tr></thead>
               <tbody id="advance-tbody">
-                <tr class="erow"><td colspan="14"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>No advance entries yet</p><span>Check "Advance?" when logging</span></div></td></tr>
+                <tr class="erow"><td colspan="14"><div class="empty"><i data-lucide="landmark" class="e-ico"></i><p>No advance entries yet</p><span>Choose Advance Payment or check Includes Advance</span></div></td></tr>
               </tbody>
             </table>
           </div>
