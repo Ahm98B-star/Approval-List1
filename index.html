@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Procurement Flow V3 · Approval Routing</title>
+  <title>GM Procurement · Approval System</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -187,6 +189,14 @@
           <div class="qov-next"><i data-lucide="clock-3"></i><span>Next automatic dispatch</span><strong id="qov-next-send">--:--</strong></div>
         </div>
 
+        <div id="main-email-limit-alert" class="main-email-limit-alert" role="alert">
+          <div class="main-email-limit-message">
+            <i data-lucide="triangle-alert"></i>
+            <div><b>EmailJS inline limit reached</b><span id="main-email-limit-text">Automatic dispatch is paused.</span></div>
+          </div>
+          <button id="btn-main-copy-full-email" type="button" class="btn btn-pri"><i data-lucide="copy"></i> Copy Full Email</button>
+        </div>
+
         <div class="filter-bar">
           <span class="fc-lbl">Filter</span>
           <button class="fchip on"  id="fc-all"     onclick="setFilter('all')"><i data-lucide="layers"></i> All</button>
@@ -313,6 +323,37 @@
         <button class="btn-add-tag" onclick="addCcFromInput()"><i data-lucide="plus"></i></button>
       </div>
       <p style="font-size:.67rem;color:var(--t2);margin-top:4px">CC emails are copied on every dispatch. Manager emails receive the email directly.</p>
+
+      <div class="sdiv">Dispatch Delivery</div>
+      <div class="dispatch-options">
+        <div class="dispatch-option-group">
+          <div class="dispatch-option-title">Email grouping</div>
+          <label class="dispatch-choice">
+            <input type="radio" name="dispatch-grouping" value="separate" checked>
+            <span><b>Separate approval emails</b><small>FM, GM and Advances are sent as separate emails. Large lists are automatically split into parts.</small></span>
+          </label>
+          <label class="dispatch-choice">
+            <input type="radio" name="dispatch-grouping" value="combined">
+            <span><b>Combined — one email</b><small>Always send one email. If the tables are too large for EmailJS, the app automatically sends the full report as one clean PDF attachment instead of splitting it.</small></span>
+          </label>
+        </div>
+        <div class="dispatch-option-group">
+          <div class="dispatch-option-title">Email content</div>
+          <label class="dispatch-choice">
+            <input type="radio" name="dispatch-content" value="html" checked>
+            <span><b>Tables in email</b><small>Approval tables are shown directly inside the email.</small></span>
+          </label>
+          <label class="dispatch-choice">
+            <input type="radio" name="dispatch-content" value="pdf">
+            <span><b>Clean PDF attachment</b><small>Send a short summary email with a formatted PDF report attached.</small></span>
+          </label>
+        </div>
+      </div>
+      <div class="pdf-setup-note" id="pdf-setup-note" style="display:none">
+        <i data-lucide="file-text"></i>
+        <span><b>EmailJS PDF setup required once:</b> add a <b>Variable Attachment</b> to your EmailJS template with parameter <code>approval_pdf</code>, filename <code>{{approval_pdf_name}}</code>, and PDF content type. Combined one-email mode may use this automatically when the inline tables are too large.</span>
+      </div>
+
       <div class="macts">
         <button id="btn-export"   class="btn btn-ghost fw"><i data-lucide="file-spreadsheet"></i> Export to Excel</button>
         <button id="btn-finalize" class="btn btn-pri fw"><i data-lucide="send"></i> Preview & Dispatch Now</button>
@@ -347,6 +388,19 @@
     <div class="stab-panel" id="stab-status" style="display:none">
       <p class="stab-desc">Run checks before dispatching to ensure everything is configured correctly.</p>
       <div id="status-checks" class="status-checks"></div>
+
+      <details class="settings-test-tools">
+        <summary><i data-lucide="flask-conical"></i><span>Test Tools</span><small>Temporary email-size stress test</small></summary>
+        <div class="settings-test-tools-body">
+          <p>Use this only to test the 50 KB EmailJS safeguard. TEST rows stay in this browser only, are never saved to Supabase, and cannot be dispatched.</p>
+          <div class="settings-test-tools-actions">
+            <span id="size-test-status" class="size-test-status">Not running</span>
+            <button id="btn-main-fill-limit" type="button" class="btn btn-ghost"><i data-lucide="database-zap"></i> Fill POs to Limit</button>
+            <button id="btn-main-clear-limit" type="button" class="btn btn-ghost" style="display:none"><i data-lucide="rotate-ccw"></i> Clear Test POs</button>
+          </div>
+        </div>
+      </details>
+
       <div class="macts" style="margin-top:16px">
         <button onclick="runStatusChecks()" class="btn btn-pri fw"><i data-lucide="refresh-cw"></i> Run Checks</button>
       </div>
@@ -369,8 +423,15 @@
   <div class="modal wide-modal">
     <div class="mhd"><h3><i data-lucide="send"></i> Dispatch Preview</h3><button class="btn-x" id="btn-close-preview">&times;</button></div>
     <div class="mbody">
+      <div id="dispatch-mode-summary" class="dispatch-mode-summary"></div>
+      <div id="email-size-warning" class="email-size-warning" role="alert">
+        <i data-lucide="triangle-alert"></i>
+        <div><b>EmailJS size warning</b><span id="email-size-warning-text"></span></div>
+      </div>
       <div id="preview-content" style="max-height:380px;overflow-y:auto"></div>
       <div class="macts" style="margin-top:14px">
+        <button id="btn-copy-full-email" class="btn btn-ghost fw"><i data-lucide="copy"></i> Copy Full Email</button>
+        <button id="btn-download-pdf" class="btn btn-ghost fw"><i data-lucide="file-down"></i> Download PDF Preview</button>
         <button id="btn-confirm-dispatch" class="btn btn-pri fw"><i data-lucide="send"></i> Confirm & Send</button>
         <button onclick="document.getElementById('preview-modal').classList.remove('open')" class="btn btn-ghost fw">Cancel</button>
       </div>

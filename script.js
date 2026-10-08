@@ -23,6 +23,14 @@ let isSending      = false;
 let activeFilter   = 'all';
 let sortState      = { table:null, col:null, dir:'asc' };
 let sfState        = { po:true, adv:true };
+let dispatchGrouping = localStorage.getItem('dispatch_grouping') || 'separate'; // 'separate' | 'combined'
+let dispatchContent  = localStorage.getItem('dispatch_content') || 'html';     // 'html' | 'pdf'
+
+// Final temporary browser-only size test + hard guard for scheduled EmailJS dispatch.
+const EMAILJS_HARD_LIMIT_BYTES = 50 * 1024;
+const SIZE_TEST_PREFIX = 'limit-test-';
+let sizeTestRows = [];
+let emailSizeAutoBlocked = false;
 
 // ═══════════════════════════
 //  DOM REFS
@@ -183,6 +191,7 @@ async function init() {
   initTheme();
   restoreDraft();
   calculate();
+  syncDispatchOptionsUI();
 
   if (DEMO_MODE) {
     managerEmail='gm@company.com';
@@ -276,6 +285,12 @@ async function loadSettings() {
   const sLastDispatch=get('last_dispatch_date');
   if (sLastDispatch?.value) lastScheduledDate=sLastDispatch.value;
 
+  const sGrouping=get('dispatch_grouping');
+  const sContent=get('dispatch_content');
+  dispatchGrouping = ['separate','combined'].includes(sGrouping?.value) ? sGrouping.value : (['separate','combined'].includes(dispatchGrouping)?dispatchGrouping:'separate');
+  dispatchContent = ['html','pdf'].includes(sContent?.value) ? sContent.value : (['html','pdf'].includes(dispatchContent)?dispatchContent:'html');
+  syncDispatchOptionsUI();
+
   // Load column config from Supabase (shared across all team members)
   loadColsFromSettings(data);
 }
@@ -289,6 +304,8 @@ async function saveSettings() {
   const newTime  = sendTimeEl?.value||'';
   const newEmail = mgrEmailEl?.value.trim()||'';
   const newCC    = ccEmails.join(',');
+  const newGrouping = document.querySelector('input[name="dispatch-grouping"]:checked')?.value || dispatchGrouping || 'separate';
+  const newContent  = document.querySelector('input[name="dispatch-content"]:checked')?.value || dispatchContent || 'html';
 
   const sb=document.getElementById('daily-schedule-text');
   if(sb){sb.innerHTML=`<i data-lucide="clock"></i>&nbsp;Auto-Dispatch: ${newTime}`;lucide.createIcons();}
@@ -301,6 +318,8 @@ async function saveSettings() {
     localStorage.setItem('emailjs_template_id',newTpl);
     localStorage.setItem('emailjs_public_key',newPub);
     localStorage.setItem('dispatch_method','emailjs');
+    localStorage.setItem('dispatch_grouping',newGrouping);
+    localStorage.setItem('dispatch_content',newContent);
     toast('Credentials saved. Refreshing…','success');
     setTimeout(()=>window.location.reload(),1000);
     return;
@@ -314,8 +333,11 @@ async function saveSettings() {
       supabaseClient.from('settings').upsert([{key:'manager_email',value:newEmail}],{onConflict:'key'}),
       supabaseClient.from('settings').upsert([{key:'manager_emails',value:managerEmails.join(',')}],{onConflict:'key'}),
       supabaseClient.from('settings').upsert([{key:'cc_emails',value:newCC}],{onConflict:'key'}),
+      supabaseClient.from('settings').upsert([{key:'dispatch_grouping',value:newGrouping}],{onConflict:'key'}),
+      supabaseClient.from('settings').upsert([{key:'dispatch_content',value:newContent}],{onConflict:'key'}),
     ]);
     dailySendTime=newTime; managerEmail=managerEmails[0]||newEmail;
+    dispatchGrouping=newGrouping; dispatchContent=newContent; localStorage.setItem('dispatch_grouping',newGrouping); localStorage.setItem('dispatch_content',newContent); syncDispatchOptionsUI();
     toast('Settings saved','success');
     settingsModal.classList.remove('open');
   } catch { toast('Sync failed','error'); }
@@ -324,7 +346,7 @@ async function saveSettings() {
 async function loadEntries() {
   const {data,error} = await supabaseClient.from('entries').select('*').order('created_at',{ascending:false});
   if (error) return toast('Load failed: '+error.message,'error');
-  entries = data.map(i=>({
+  const loadedEntries = data.map(i=>({
     id:i.id, date:i.po_date, prSo:i.pr_so_number, po:i.po_number,
     woSo:i.wo_so_number, description:i.description, category:i.category,
     supplier:i.supplier, amount:i.amount, currency:i.currency,
@@ -334,6 +356,8 @@ async function loadEntries() {
     status: i.is_sent ? 'sent' : (i.on_hold ? 'hold' : 'pending'),
     on_hold: i.on_hold || false
   }));
+  // Temporary size-test rows live only in browser memory and are never written to Supabase.
+  entries = [...loadedEntries, ...sizeTestRows];
   renderDashboard();
   updateSupplierList();
   buildReuseMenu();
@@ -561,7 +585,7 @@ function reuseEntry(id) {
 // ═══════════════════════════
 function buildReuseMenu() {
   const menu=document.getElementById('reuse-menu'); if(!menu) return;
-  const recent=entries.slice(0,20);
+  const recent=entries.filter(e=>!isSizeTestEntry(e)).slice(0,20);
   if (!recent.length) { menu.innerHTML='<div class="reuse-empty">No history yet</div>'; return; }
   menu.innerHTML=recent.map(e=>{
     const {suppNo,vendorName}=extractSupplier(e.supplier);
@@ -578,7 +602,7 @@ window.filterReuse = function(q) {
   const menu=document.getElementById('reuse-menu'); if(!menu) return;
   if (!q||q.length<1){menu.classList.remove('open');return;}
   const lo=q.toLowerCase();
-  const hits=entries.filter(e=>[e.supplier,e.po,e.description,e.category].some(v=>v&&v.toLowerCase().includes(lo))).slice(0,8);
+  const hits=entries.filter(e=>!isSizeTestEntry(e)&&[e.supplier,e.po,e.description,e.category].some(v=>v&&v.toLowerCase().includes(lo))).slice(0,8);
   if (!hits.length){menu.classList.remove('open');return;}
   menu.innerHTML=hits.map(e=>{
     const {suppNo,vendorName}=extractSupplier(e.supplier);
@@ -794,20 +818,21 @@ function renderDashboard() {
   if (poTbody) {
     poTbody.innerHTML = pos.length===0 ? emptyPo : pos.map(e=>{
       const {suppNo,vendorName}=extractSupplier(e.supplier);
-      const classes=[]; if(e.status==='hold') classes.push('held-row'); if(e.status==='sent') classes.push('sent-row'); if(recentSent.has(e.id)) classes.push('just-sent-row');
+      const isTest=isSizeTestEntry(e);
+      const classes=[]; if(e.status==='hold') classes.push('held-row'); if(e.status==='sent') classes.push('sent-row'); if(recentSent.has(e.id)) classes.push('just-sent-row'); if(isTest) classes.push('size-test-row');
       const rowCls=classes.length?` class="${classes.join(' ')}"`:'';
       const cells = visPo.map(c=>`<td>${getCellHtml(e,c.key,'po')}</td>`).join('');
-      return `<tr${rowCls}>
-        <td><input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()"></td>
-        ${cells}
-        <td><div class="row-acts">
+      const selectCell=isTest?`<span class="size-test-badge">TEST</span>`:`<input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()">`;
+      const actions=isTest?`<span class="size-test-badge">LOCAL ONLY</span>`:`<div class="row-acts">
           ${e.status!=='sent'?`<button class="ra" onclick="startEdit('${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>`:''}
-          <button class="ra reuse"   onclick="reuseEntry('${e.id}')" title="Reuse as new"><i data-lucide="copy-plus"></i></button>
-          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release':'Hold'}">
-            <i data-lucide="${e.on_hold?'play-circle':'pause-circle'}"></i>
-          </button>
+          <button class="ra reuse" onclick="reuseEntry('${e.id}')" title="Reuse as new"><i data-lucide="copy-plus"></i></button>
+          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release':'Hold'}"><i data-lucide="${e.on_hold?'play-circle':'pause-circle'}"></i></button>
           <button class="ra del" onclick="deleteEntry('${e.id}')" title="Delete"><i data-lucide="trash-2"></i></button>
-        </div></td>
+        </div>`;
+      return `<tr${rowCls}>
+        <td>${selectCell}</td>
+        ${cells}
+        <td>${actions}</td>
       </tr>`;
     }).join('');
   }
@@ -815,23 +840,25 @@ function renderDashboard() {
   if (advTbody) {
     advTbody.innerHTML = advs.length===0 ? emptyAdv : advs.map(e=>{
       const {suppNo,vendorName}=extractSupplier(e.supplier);
-      const classes=[]; if(e.status==='hold') classes.push('held-row'); if(e.status==='sent') classes.push('sent-row'); if(recentSent.has(e.id)) classes.push('just-sent-row');
+      const isTest=isSizeTestEntry(e);
+      const classes=[]; if(e.status==='hold') classes.push('held-row'); if(e.status==='sent') classes.push('sent-row'); if(recentSent.has(e.id)) classes.push('just-sent-row'); if(isTest) classes.push('size-test-row');
       const rowCls=classes.length?` class="${classes.join(' ')}"`:'';
       const cells = visAdv.map(c=>`<td>${getCellHtml(e,c.key,'adv')}</td>`).join('');
-      return `<tr${rowCls}>
-        <td><input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()"></td>
-        ${cells}
-        <td><div class="row-acts">
+      const selectCell=isTest?`<span class="size-test-badge">TEST</span>`:`<input type="checkbox" class="row-cb" value="${e.id}" onchange="updateSelBtns()">`;
+      const actions=isTest?`<span class="size-test-badge">LOCAL ONLY</span>`:`<div class="row-acts">
           ${e.status!=='sent'?`<button class="ra" onclick="startEdit('${e.id}')" title="Edit"><i data-lucide="pencil"></i></button>`:''}
-          <button class="ra reuse"   onclick="reuseEntry('${e.id}')" title="Reuse as new"><i data-lucide="copy-plus"></i></button>
-          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release':'Hold'}">
-            <i data-lucide="${e.on_hold?'play-circle':'pause-circle'}"></i>
-          </button>
+          <button class="ra reuse" onclick="reuseEntry('${e.id}')" title="Reuse as new"><i data-lucide="copy-plus"></i></button>
+          <button class="ra ${e.on_hold?'unhold':'hold'}" onclick="toggleHold('${e.id}')" title="${e.on_hold?'Release':'Hold'}"><i data-lucide="${e.on_hold?'play-circle':'pause-circle'}"></i></button>
           <button class="ra del" onclick="deleteEntry('${e.id}')" title="Delete"><i data-lucide="trash-2"></i></button>
-        </div></td>
+        </div>`;
+      return `<tr${rowCls}>
+        <td>${selectCell}</td>
+        ${cells}
+        <td>${actions}</td>
       </tr>`;
     }).join('');
   }
+  updateMainEmailSizeGuard();
   lucide.createIcons();
 }
 
@@ -913,7 +940,320 @@ function calculate() {
 }
 
 // ═══════════════════════════
-//  EMAIL — FIXED DOUBLE SEND
+//  DISPATCH DELIVERY OPTIONS + PDF
+// ═══════════════════════════
+function syncDispatchOptionsUI() {
+  document.querySelectorAll('input[name="dispatch-grouping"]').forEach(r=>r.checked=(r.value===dispatchGrouping));
+  document.querySelectorAll('input[name="dispatch-content"]').forEach(r=>r.checked=(r.value===dispatchContent));
+  const note=document.getElementById('pdf-setup-note');
+  if(note) note.style.display=(dispatchContent==='pdf'||dispatchGrouping==='combined')?'flex':'none';
+  lucide.createIcons();
+}
+
+function getDispatchModeText() {
+  const grouping = dispatchGrouping==='separate' ? 'Separate FM / GM / Advance emails' : 'Combined — one email';
+  const content = dispatchContent==='pdf' ? 'Clean PDF attachment' : 'Tables inside email';
+  return `${grouping} · ${content}`;
+}
+
+function requiredDispatchRoutes(e) {
+  if (isAdvanceEntry(e)) return ['ADV'];
+  const r=getApprovalRoute(e);
+  return r==='GM' ? ['FM','GM'] : r==='FM' ? ['FM'] : [];
+}
+
+function buildDispatchJobs(list) {
+  if(dispatchGrouping==='combined') return [{section:'COMBINED',label:'Approval Summary',entries:[...list]}];
+  const g=getDispatchGroups(list);
+  return [
+    {section:'FM',label:'FM Approval',entries:g.fm},
+    {section:'GM',label:'GM Approval',entries:g.gm},
+    {section:'ADV',label:'Advance Payments',entries:g.advances},
+  ].filter(j=>j.entries.length);
+}
+
+function pdfSafeText(v) {
+  return String(v ?? '').replace(/[\r\n]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
+function createDispatchPdf(entriesList, section='COMBINED', partNo=1, totalParts=1) {
+  if (!window.jspdf?.jsPDF) throw new Error('PDF library did not load. Check your internet connection and retry.');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape',unit:'pt',format:'a4',compress:true});
+  const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const fileDate=new Date().toISOString().slice(0,10);
+  const titleMap={FM:'FM Approval',GM:'GM Approval',ADV:'Advance Payments',COMBINED:'Procurement Approval Summary'};
+  const title=titleMap[section]||'Procurement Approval Summary';
+  const partLabel=totalParts>1?` - Part ${partNo} of ${totalParts}`:'';
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.text(`${title}${partLabel}`,40,42);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100);
+  doc.text(`${today}  |  Generated from Procurement Flow`,40,58);
+  doc.setDrawColor(220); doc.line(40,68,802,68); doc.setTextColor(20);
+  let y=84;
+
+  const addTable=(sectionTitle,items,isAdvance=false)=>{
+    if(!items.length) return;
+    if(y>525){doc.addPage();y=50;}
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text(`${sectionTitle} (${items.length})`,40,y); y+=8;
+    let head, body;
+    if(isAdvance){
+      head=[['PR #','PO #','Supplier','Description','PO Amount','Cur','Advance %','Advance SAR','Notes']];
+      body=items.map(e=>[
+        pdfSafeText(e.prSo||'-'),pdfSafeText(e.po||'-'),pdfSafeText(extractSupplier(e.supplier).vendorName),pdfSafeText(e.description||'-'),
+        Number(e.amount||0).toLocaleString(),pdfSafeText(e.currency||''),`${Number(e.advancePercent||0)}%`,Number(e.advanceAmount||0).toLocaleString(),pdfSafeText(e.notes||'-')
+      ]);
+    } else {
+      head=[['PR #','PO #','WO / SO #','Supplier','Description','Amount','Cur','SAR','Approvers']];
+      body=items.map(e=>[
+        pdfSafeText(e.prSo||'-'),pdfSafeText(e.po||'-'),pdfSafeText(e.woSo||'-'),pdfSafeText(extractSupplier(e.supplier).vendorName),pdfSafeText(e.description||'-'),
+        Number(e.amount||0).toLocaleString(),pdfSafeText(e.currency||''),Number(e.amountSar||0).toLocaleString(),getEmailApprovers(e)
+      ]);
+    }
+    doc.autoTable({startY:y,head,body,theme:'grid',margin:{left:40,right:40},styles:{font:'helvetica',fontSize:7.2,cellPadding:4,overflow:'linebreak',valign:'middle'},headStyles:{fillColor:[241,245,249],textColor:[15,23,42],fontStyle:'bold'},alternateRowStyles:{fillColor:[250,251,253]},columnStyles:isAdvance?{2:{cellWidth:105},3:{cellWidth:135},8:{cellWidth:120}}:{3:{cellWidth:100},4:{cellWidth:145},8:{cellWidth:62}}});
+    y=doc.lastAutoTable.finalY+22;
+  };
+
+  if(section==='FM') addTable('FM Approval',entriesList,false);
+  else if(section==='GM') addTable('GM Approval',entriesList,false);
+  else if(section==='ADV') addTable('Advance Payments',entriesList,true);
+  else {
+    const g=getDispatchGroups(entriesList);
+    addTable('FM Approval',g.fm,false);
+    addTable('GM Approval',g.gm,false);
+    addTable('Advance Payments',g.advances,true);
+  }
+
+  const pages=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pages;i++){
+    doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120);
+    doc.text(`GM Procurement Approval System  |  Page ${i} of ${pages}`,40,575);
+  }
+  const sectionSlug=section==='COMBINED'?'approval-summary':section.toLowerCase();
+  const filename=`procurement-${sectionSlug}-${fileDate}${totalParts>1?`-part-${partNo}-of-${totalParts}`:''}.pdf`;
+  const dataUri=doc.output('datauristring');
+  return {doc,dataUri,filename,bytes:new TextEncoder().encode(dataUri).length};
+}
+
+async function downloadDispatchPdfPreview() {
+  const pending=entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
+  if(!pending.length) return toast('No FM, GM or Advance items to export','info');
+  try{
+    const pdf=createDispatchPdf(pending,'COMBINED',1,1);
+    pdf.doc.save(pdf.filename);
+  }catch(err){toast('PDF failed: '+(err?.message||err),'error');}
+}
+
+// Build the COMPLETE formatted approval email independently from EmailJS.
+// This intentionally has no 50 KB split because it is used for manual copy/paste.
+function buildFullManualEmail(sourceEntries) {
+  const list=(sourceEntries||[]).filter(e=>e.status==='pending' && isDispatchEligible(e));
+  const groups=getDispatchGroups(list);
+  const visPo=poCols.filter(c=>c.visible&&c.key!=='status');
+  const visAdv=advCols.filter(c=>c.visible&&c.key!=='status');
+  const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
+  const primaryMgr=managerEmails[0]||managerEmail||'';
+  const allCC=[...managerEmails.slice(1),...ccEmails].filter(Boolean).join(', ');
+  const emailCellValue=(e,key,isPo=false)=>String((isPo&&key==='approval'?getEmailApprovers(e):getCellValue(e,key))??'');
+  const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
+  // The table fragments intentionally use inline styles because the copied HTML is
+  // pasted into Outlook/Gmail, where external CSS classes are not reliable.
+  const buildSection=(title,items,cols,accent,isPo=false)=>{
+    if(!items.length) return '';
+    const emailCols=isPo?cols.map(c=>c.key==='approval'?{...c,label:'Approvers'}:c):cols;
+    const th='background:#f8fafc;color:#0f172a;padding:7px 8px;border:1px solid #e2e8f0;text-align:left;font-weight:700;white-space:nowrap;';
+    const td='padding:7px 8px;border:1px solid #e2e8f0;vertical-align:top;color:#334155;';
+    const hdrs=[...emailCols.map(c=>c.label),'Status'].map(h=>`<th style="${th}">${esc(h)}</th>`).join('');
+    const rows=items.map(e=>`<tr>${[...emailCols.map(c=>`<td style="${td}">${esc(emailCellValue(e,c.key,isPo))}</td>`),`<td style="${td}">Pending</td>`].join('')}</tr>`).join('');
+    const total=items.reduce((sum,e)=>sum+(isAdvanceEntry(e)?Number(e.advanceAmount||0):Number(e.amountSar||0)),0);
+    return `<div style="margin:0 0 18px;">\n      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px;">\n        <h3 style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;margin:0;color:${accent};font-size:15px;font-weight:700;">${esc(title)}</h3>\n        <span style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#64748b;font-size:12px;font-weight:600;">${items.length} item${items.length===1?'':'s'} · ${total.toLocaleString()} SAR</span>\n      </div>\n      <table style="border-collapse:collapse;width:100%;font-size:12px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#ffffff;"><thead><tr>${hdrs}</tr></thead><tbody>${rows}</tbody></table>\n    </div>`;
+  };
+
+  const fmH=buildSection('FM Approval',groups.fm,visPo,'#2563eb',true);
+  const gmH=buildSection('GM Approval',groups.gm,visPo,'#7c3aed',true);
+  const advH=buildSection('Advance Payments',groups.advances,visAdv,'#d97706',false);
+  const poTable=fmH+gmH;
+  const uniquePoEntries=list.filter(e=>!isAdvanceEntry(e));
+  const poCount=uniquePoEntries.length;
+  const totalPo=uniquePoEntries.reduce((s,e)=>s+Number(e.amountSar||0),0);
+  const totalAdv=groups.advances.reduce((s,e)=>s+Number(e.advanceAmount||0),0);
+  const grandTotal=totalPo+totalAdv;
+  const subject=`GM Procurement Approval Request - ${today}`;
+
+  // Mirrors the user's EmailJS template so Copy Full Email looks the same when
+  // pasted into a new Outlook/Gmail message.
+  const html=`<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 30px; color: #1e293b;">\n  <div style="text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 25px; background: white; padding-top: 20px; border-radius: 8px 8px 0 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">\n    <h2 style="margin: 0; color: #0f172a; letter-spacing: 1px; font-weight: 700;">GM PROCUREMENT APPROVAL REQUEST</h2>\n    <p style="margin: 5px 0 0; color: #64748b; font-size: 14px; font-weight: 500;">Procurement Department | Internal System Dispatch</p>\n  </div>\n\n  <div style="background: white; padding: 20px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 25px;">\n    <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0;">\n      Dear GM,<br><br>\n      Please review the following approval requests gathered from the Procurement Database today.\n    </p>\n  </div>\n\n  <div style="background-color: #ffffff; border-left: 5px solid #3b82f6; border-radius: 6px; padding: 20px; margin: 25px 0 15px; display: table; width: 100%; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">\n    <div style="display: table-cell; width: 50%; vertical-align: middle;">\n      <p style="margin: 0; font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">PO PENDING ITEMS</p>\n      <h3 style="margin: 8px 0 0; color: #0f172a; font-size: 20px;">${poCount.toLocaleString()} Tracking</h3>\n    </div>\n    <div style="display: table-cell; width: 50%; text-align: right; vertical-align: middle;">\n      <p style="margin: 0; font-size: 11px; color: #2563eb; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">TOTAL PO AMOUNT (SAR)</p>\n      <h3 style="margin: 8px 0 0; color: #2563eb; font-size: 22px;">${totalPo.toLocaleString()}</h3>\n    </div>\n  </div>\n\n  <div style="margin-bottom: 30px; overflow-x: auto; background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">\n    ${poTable || '<p style="margin:0;color:#94a3b8;font-size:13px;">No PO approval items.</p>'}\n  </div>\n\n  <div style="background-color: #ffffff; border-left: 5px solid #f59e0b; border-radius: 6px; padding: 20px; margin: 25px 0 15px; display: table; width: 100%; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">\n    <div style="display: table-cell; width: 50%; vertical-align: middle;">\n      <p style="margin: 0; font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">ADVANCE REQUESTS</p>\n      <h3 style="margin: 8px 0 0; color: #0f172a; font-size: 20px;">${groups.advances.length.toLocaleString()} Tracking</h3>\n    </div>\n    <div style="display: table-cell; width: 50%; text-align: right; vertical-align: middle;">\n      <p style="margin: 0; font-size: 11px; color: #d97706; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">TOTAL ADVANCES AMOUNT (SAR)</p>\n      <h3 style="margin: 8px 0 0; color: #d97706; font-size: 22px;">${totalAdv.toLocaleString()}</h3>\n    </div>\n  </div>\n\n  <div style="margin-bottom: 30px; overflow-x: auto; background: white; padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">\n    ${advH || '<p style="margin:0;color:#94a3b8;font-size:13px;">No advance requests.</p>'}\n  </div>\n\n  <div style="text-align: right; background-color: #ffffff; padding: 20px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">\n    <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Grand Total Required (SAR)</p>\n    <h2 style="margin: 10px 0 0; color: #059669; font-size: 28px; font-weight: 800;">${grandTotal.toLocaleString()}</h2>\n  </div>\n\n  <div style="margin-top: 35px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 20px;">\n    <p style="margin: 0;">This is an automated dispatch from the Olayan GM Procurement Approval System.</p>\n  </div>\n</div>`;
+
+  // Estimate the same dynamic-variable footprint a single full EmailJS HTML message would use.
+  const estimatedParams={
+    subject_line:subject,to_email:primaryMgr,cc_email:allCC,
+    po_table:poTable,fm_table:fmH,gm_table:gmH,adv_table:advH,html_body:html,
+    summary_count:list.length,po_count:poCount,fm_count:groups.fm.length,gm_count:groups.gm.length,adv_count:groups.advances.length,
+    total_po_sar:totalPo.toLocaleString(),total_adv_sar:totalAdv.toLocaleString(),total_sar:grandTotal.toLocaleString()
+  };
+  const bytes=new TextEncoder().encode(JSON.stringify(estimatedParams)).length;
+  const temp=document.createElement('div'); temp.innerHTML=html;
+  const plain=`${subject}\n\n${temp.innerText || temp.textContent || ''}`;
+  return {subject,html,plain,bytes,count:list.length,poCount,totalPo,totalAdv,grandTotal};
+}
+
+function updateMainEmailSizeGuard() {
+  const pending=getDispatchPendingEntries();
+  const alert=document.getElementById('main-email-limit-alert');
+  const textEl=document.getElementById('main-email-limit-text');
+  const status=document.getElementById('size-test-status');
+  const clearBtn=document.getElementById('btn-main-clear-limit');
+  const next=document.getElementById('qov-next-send');
+
+  const report=buildFullManualEmail(pending);
+  const kb=report.bytes/1024;
+  const over=report.bytes>=EMAILJS_HARD_LIMIT_BYTES;
+  emailSizeAutoBlocked=over;
+
+  if(alert) alert.classList.toggle('show',over);
+  if(textEl && over){
+    textEl.textContent=`Full combined email ≈ ${kb.toFixed(1)} KB across ${pending.length} pending approval request${pending.length===1?'':'s'}. Automatic dispatch is paused. Copy the complete email and paste it into Outlook/Gmail.`;
+  }
+  if(next) next.textContent=over?'Paused · email >50 KB':(dailySendTime||'Off');
+
+  if(clearBtn) clearBtn.style.display=sizeTestRows.length?'inline-flex':'none';
+  if(status){
+    status.classList.remove('running','limit');
+    if(sizeTestRows.length){
+      status.textContent=`${sizeTestRows.length} TEST POs · ${kb.toFixed(1)} KB`;
+      status.classList.add(over?'limit':'running');
+    }else{
+      status.textContent=over?`${kb.toFixed(1)} KB · limit reached`:`${kb.toFixed(1)} KB current`;
+      if(over) status.classList.add('limit');
+    }
+  }
+}
+
+function updateEmailSizeWarning(sourceEntries) {
+  const warn=document.getElementById('email-size-warning');
+  const txt=document.getElementById('email-size-warning-text');
+  const btn=document.getElementById('btn-copy-full-email');
+  if(!warn||!txt||!btn) return;
+  const report=buildFullManualEmail(sourceEntries);
+  const kb=report.bytes/1024;
+  const warningAt=42*1024, hardAt=50*1024;
+  warn.classList.remove('show','danger');
+  btn.classList.remove('limit-active','limit-danger');
+  btn.title=`Copy the complete formatted email (${kb.toFixed(1)} KB estimated EmailJS variables)`;
+  if(report.bytes>=hardAt){
+    warn.classList.add('show','danger');
+    btn.classList.add('limit-active','limit-danger');
+    txt.textContent=`The complete inline email is about ${kb.toFixed(1)} KB, above EmailJS' 50 KB variables limit. Use Copy Full Email to paste the entire formatted list into Outlook/Gmail, or use the PDF option.`;
+    toast('EmailJS size limit reached — Copy Full Email is ready as a manual fallback.','error');
+  }else if(report.bytes>=warningAt){
+    warn.classList.add('show');
+    btn.classList.add('limit-active');
+    txt.textContent=`The complete inline email is about ${kb.toFixed(1)} KB and is approaching EmailJS' 50 KB limit. Copy Full Email is available if you prefer to paste the full list manually.`;
+    toast('Approval email is close to the EmailJS size limit.','info');
+  }
+}
+
+function fallbackRichCopy(html) {
+  const host=document.createElement('div');
+  host.contentEditable='true';
+  host.setAttribute('aria-hidden','true');
+  host.style.cssText='position:fixed;left:-10000px;top:0;width:1000px;background:#fff;color:#000;';
+  host.innerHTML=html;
+  document.body.appendChild(host);
+  const range=document.createRange(); range.selectNodeContents(host);
+  const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  const ok=document.execCommand('copy');
+  sel.removeAllRanges(); host.remove();
+  return ok;
+}
+
+async function copyFullEmail() {
+  const pending=entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
+  if(!pending.length) return toast('No FM, GM or Advance items to copy','info');
+  const report=buildFullManualEmail(pending);
+  try{
+    if(navigator.clipboard?.write && window.ClipboardItem){
+      const item=new ClipboardItem({
+        'text/html':new Blob([report.html],{type:'text/html'}),
+        'text/plain':new Blob([report.plain],{type:'text/plain'})
+      });
+      await navigator.clipboard.write([item]);
+    }else if(!fallbackRichCopy(report.html)){
+      throw new Error('Browser clipboard API is unavailable');
+    }
+    toast(`Full formatted email copied · ${report.count} requests. Paste it into a new email.`, 'success');
+  }catch(err){
+    try{await navigator.clipboard.writeText(report.plain);toast('Copied as plain text. Your browser blocked rich-format clipboard access.','info');}
+    catch{toast('Copy failed — allow clipboard access for this site and retry.','error');}
+  }
+}
+
+// ═══════════════════════════
+//  SETTINGS-ONLY LOAD TEST — EMAILJS SIZE LIMIT
+// ═══════════════════════════
+function isSizeTestEntry(e) {
+  return String(e?.id || '').startsWith(SIZE_TEST_PREFIX);
+}
+
+function makeSizeTestEntry(i) {
+  const n=String(i+1).padStart(3,'0');
+  const today=new Date().toISOString().slice(0,10);
+  const kind=i%3; // FM / GM-value / GM-CAPEX — all are PO rows, no advances.
+  const isFm=kind===0;
+  const isCapex=kind===2;
+  const amount=isFm ? 32000 + i*11 : (isCapex ? 18000 + i*13 : 78000 + i*17);
+  return {
+    id:`${SIZE_TEST_PREFIX}${i+1}`, date:today,
+    prSo:`TEST-PR-${n}`, woSo:'N/A',
+    po:isCapex?`25${String(100000+i).slice(-6)}`:`35${String(100000+i).slice(-6)}`,
+    description:`TEST PO ${n} — temporary procurement approval row used only to reach the EmailJS message-size limit and test the Copy Full Email fallback`,
+    category:isCapex?'Capex':'Material purchase',
+    supplier:`TEST-${n} - Temporary Supplier ${n}`,
+    amount, currency:'SAR', amountSar:amount, advancePercent:0, advanceAmount:0,
+    notes:`TEST ONLY — browser-memory row ${n}. Never saved to Supabase and never sent through EmailJS.`,
+    is_sent:false, status:'pending', on_hold:false, __sizeTest:true
+  };
+}
+
+function getDispatchPendingEntries() {
+  return entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
+}
+
+async function fillMainToEmailLimit() {
+  // Start fresh each time and keep all real rows exactly as they are.
+  sizeTestRows=[];
+  entries=entries.filter(e=>!isSizeTestEntry(e));
+  const target=51.2*1024;
+  let report=buildFullManualEmail(getDispatchPendingEntries());
+  let added=0;
+
+  while(report.bytes<target && added<500){
+    const row=makeSizeTestEntry(added);
+    sizeTestRows.push(row);
+    entries.push(row);
+    added++;
+    if(added<10 || added%3===0) report=buildFullManualEmail(getDispatchPendingEntries());
+  }
+  report=buildFullManualEmail(getDispatchPendingEntries());
+  renderDashboard();
+  updateSupplierList();
+  buildReuseMenu();
+  toast(`Added ${added} local TEST POs · full email ≈ ${(report.bytes/1024).toFixed(1)} KB. Auto-dispatch is paused while the limit is exceeded.`,'success');
+}
+
+function clearMainSizeTestRows() {
+  const removed=sizeTestRows.length;
+  sizeTestRows=[];
+  entries=entries.filter(e=>!isSizeTestEntry(e));
+  renderDashboard();
+  updateSupplierList();
+  buildReuseMenu();
+  toast(removed?`Removed ${removed} temporary TEST POs.`:'No test POs to clear.','info');
+}
+
+// ═══════════════════════════
+//  EMAIL — SAFE SPLITTING + PDF OPTION
 // ═══════════════════════════
 // Uses a per-minute lock stored in supabase settings to prevent
 // multiple tabs or rapid interval ticks from sending twice.
@@ -933,145 +1273,230 @@ async function openDispatchPreview() {
     const rows=items.map(e=>'<tr>'+[...emailCols.map(c=>`<td style="${tds}">${isPo && c.key==='approval' ? getEmailApprovers(e) : getCellValue(e,c.key)}</td>`),`<td style="${tds}">Pending</td>`].join('')+'</tr>').join('');
     return `<div class="preview-count">${icon} ${title} (${items.length})</div><table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>${rows}</tbody></table>`;
   };
-  const html=
-    section('FM Approval',groups.fm,visPo,'🟦',true)+
-    section('GM Approval',groups.gm,visPo,'🟪',true)+
-    section('Advance Payments',groups.advances,visAdv,'🟧');
+  const html=section('FM Approval',groups.fm,visPo,'🟦',true)+section('GM Approval',groups.gm,visPo,'🟪',true)+section('Advance Payments',groups.advances,visAdv,'🟧');
+  const summary=document.getElementById('dispatch-mode-summary');
+  if(summary) summary.innerHTML=`<i data-lucide="mail-check" style="width:14px;height:14px"></i><span><b>${getDispatchModeText()}</b>${dispatchGrouping==='combined'?' · Exactly one email. Oversized inline tables automatically move to one PDF attachment.':(dispatchContent==='pdf'?' · PDF will be generated separately for each email/part.':'')}</span>`;
   document.getElementById('preview-content').innerHTML=html;
+  updateEmailSizeWarning(pending);
+  const confirmBtn=document.getElementById('btn-confirm-dispatch');
+  if(confirmBtn){
+    const hasTests=sizeTestRows.length>0;
+    confirmBtn.disabled=hasTests;
+    confirmBtn.title=hasTests?'Temporary TEST POs are active. Clear them before sending.':'';
+    if(hasTests && summary) summary.innerHTML += `<span class="preview-test-lock">TEST rows active · sending disabled · Copy Full Email remains available</span>`;
+  }
   lucide.createIcons();
   document.getElementById('preview-modal').classList.add('open');
   settingsModal.classList.remove('open');
 }
+
 async function confirmDispatch() {
+  if(sizeTestRows.length) return toast('TEST POs are active. Use Copy Full Email for the test, then Clear Test POs before sending.','error');
   document.getElementById('preview-modal').classList.remove('open');
   if (DEMO_MODE) { const demoIds=entries.filter(e=>e.status==='pending'&&isDispatchEligible(e)).map(e=>e.id); entries.forEach(e=>{if(demoIds.includes(e.id)){e.status='sent';e.is_sent=true;}}); rememberRecentlySent(demoIds); renderDashboard(); toast('Demo dispatch completed — SCM items remain in the app','success'); document.getElementById('success-modal').classList.add('open'); return; }
   await sendEmail(false);
 }
 
 async function sendEmail(isScheduled=false) {
-  if (isSending) return;
-
+  if (isSending) return false;
+  if(sizeTestRows.length){
+    if(!isScheduled) toast('Temporary TEST POs are active. Clear them before sending.','error');
+    return false;
+  }
   let pending=entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
   if (!pending.length) { if(!isScheduled) toast('No FM, GM or Advance items to send','info'); return false; }
 
-  // Double-send guard: for scheduled sends, block if already sent this minute
+  // Automatic sending must never hit EmailJS' hard inline-variable limit.
+  // Manual dispatch remains available because Combined mode can intentionally fall back to PDF.
+  if(isScheduled){
+    const scheduledReport=buildFullManualEmail(pending);
+    if(scheduledReport.bytes>=EMAILJS_HARD_LIMIT_BYTES){
+      emailSizeAutoBlocked=true;
+      updateMainEmailSizeGuard();
+      return false;
+    }
+  }
+
   const nowMinute = new Date().toISOString().slice(0,16);
   if (isScheduled && sendEmail._lastMinute === nowMinute) return false;
   if (isScheduled) sendEmail._lastMinute = nowMinute;
 
   isSending=true;
-  let ids = [];
-  try {
-    const primaryMgrCheck = managerEmails[0] || managerEmail;
-    if (!primaryMgrCheck) throw new Error('Manager email not set — add one in Settings → Email tab');
-    if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings');
+  let ids=[];
+  const completedRoutes=new Map();
+  const EMAILJS_SAFE_BYTES=36*1024;
+  const PDF_SAFE_BYTES=420*1024; // conservative for attachment-capable EmailJS plans
+  const RATE_DELAY_MS=1150;
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const paramsBytes=params=>{
+    const copy={...params}; delete copy.approval_pdf;
+    return new TextEncoder().encode(JSON.stringify(copy)).length;
+  };
+  const markDone=(batch,section)=>{
+    batch.forEach(e=>{
+      const set=completedRoutes.get(e.id)||new Set();
+      if(section==='COMBINED') requiredDispatchRoutes(e).forEach(r=>set.add(r)); else set.add(section);
+      completedRoutes.set(e.id,set);
+    });
+  };
+  const isFullyDone=e=>requiredDispatchRoutes(e).every(r=>completedRoutes.get(e.id)?.has(r));
 
-    ids=pending.map(i=>i.id);
-    // Claim only rows that are still pending. If two users/tabs dispatch together,
-    // only the client that actually claimed a row includes it in the email.
-    const {data:claimed,error:ue}=await supabaseClient.from('entries')
-      .update({is_sent:true}).in('id',ids).eq('is_sent',false).eq('on_hold',false).select('id');
+  try{
+    const primaryMgr=managerEmails[0]||managerEmail;
+    if(!primaryMgr) throw new Error('Manager email not set — add one in Settings → Email tab');
+    if(!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) throw new Error('EmailJS keys missing in Settings');
+    if(typeof emailjs==='undefined') throw new Error('EmailJS library not loaded. Check your internet connection.');
+    if(dispatchContent==='pdf' && !window.jspdf?.jsPDF) throw new Error('PDF library did not load. Check your internet connection.');
+
+    ids=pending.map(e=>e.id);
+    const {data:claimed,error:ue}=await supabaseClient.from('entries').update({is_sent:true}).in('id',ids).eq('is_sent',false).eq('on_hold',false).select('id');
     if(ue) throw ue;
     const claimedIds=(claimed||[]).map(r=>r.id);
-    pending=pending.filter(e=>claimedIds.includes(e.id));
-    ids=claimedIds;
-    if (!pending.length) {
-      await loadEntries();
-      return true;
-    }
+    pending=pending.filter(e=>claimedIds.includes(e.id)); ids=claimedIds;
+    if(!pending.length){await loadEntries();return true;}
 
-    const groups=getDispatchGroups(pending);
-    const fm=groups.fm, gm=groups.gm, advs=groups.advances;
     const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
-    const ts='border-collapse:collapse;width:100%;font-size:12px;font-family:sans-serif;';
-    const ths='background:#f8fafc;color:#0f172a;padding:6px 8px;border:1px solid #e2e8f0;text-align:left;';
-    const tds='padding:6px 8px;border:1px solid #e2e8f0;vertical-align:top;';
+    const extraMgrs=managerEmails.slice(1);
+    const allCC=[...extraMgrs,...ccEmails].filter(Boolean).join(', ');
+    const visPo=poCols.filter(c=>c.visible&&c.key!=='status');
+    const visAdv=advCols.filter(c=>c.visible&&c.key!=='status');
+    const emailCellValue=(e,key,isPo=false)=>String((isPo&&key==='approval'?getEmailApprovers(e):getCellValue(e,key))??'');
 
-    // Use same column config as screen — only visible cols, in same order
-    const visPo  = poCols.filter(c=>c.visible && c.key!=='status');  // status added separately at end
-    const visAdv = advCols.filter(c=>c.visible && c.key!=='status');
-
-    const buildSection=(title,items,cols,accent,isPo=false)=>{
+    const buildHtmlSection=(title,items,cols,accent,isPo=false)=>{
       if(!items.length) return '';
-      const emailCols = isPo ? cols.map(c => c.key === 'approval' ? {...c, label:'Approvers'} : c) : cols;
-      const hdrs=[...emailCols.map(c=>c.label),'Status'].map(h=>`<th style="${ths};background:${accent}12;color:#0f172a">${h}</th>`).join('');
-      const rows=items.map(e=>{
-        const cells=[...emailCols.map(c=>`<td style="${tds}">${isPo && c.key==='approval' ? getEmailApprovers(e) : getCellValue(e,c.key)}</td>`),`<td style="${tds}">${getCellValue(e,'status')}</td>`].join('');
-        return `<tr>${cells}</tr>`;
-      }).join('');
-      const total=items.reduce((s,e)=>s+(isAdvanceEntry(e)?Number(e.advanceAmount||0):Number(e.amountSar||0)),0);
-      return `<h3 style="font-family:sans-serif;margin:18px 0 7px;color:${accent}">${title} (${items.length}) · ${total.toLocaleString()} SAR</h3><table style="${ts}"><thead><tr>${hdrs}</tr></thead><tbody>${rows}</tbody></table>`;
+      const emailCols=isPo?cols.map(c=>c.key==='approval'?{...c,label:'Approvers'}:c):cols;
+      const th='background:#f8fafc;color:#0f172a;padding:6px 8px;border:1px solid #e2e8f0;text-align:left;';
+      const td='padding:6px 8px;border:1px solid #e2e8f0;vertical-align:top;';
+      const hdrs=[...emailCols.map(c=>c.label),'Status'].map(h=>`<th style="${th}">${h}</th>`).join('');
+      const rows=items.map(e=>`<tr>${[...emailCols.map(c=>`<td style="${td}">${emailCellValue(e,c.key,isPo)}</td>`),`<td style="${td}">Pending</td>`].join('')}</tr>`).join('');
+      const total=items.reduce((sum,e)=>sum+(isAdvanceEntry(e)?Number(e.advanceAmount||0):Number(e.amountSar||0)),0);
+      return `<h3 style="margin:18px 0 7px;color:${accent}">${title} (${items.length}) · ${total.toLocaleString()} SAR</h3><table style="border-collapse:collapse;width:100%;font-size:12px;font-family:Arial,sans-serif"><thead><tr>${hdrs}</tr></thead><tbody>${rows}</tbody></table>`;
     };
-    // Required order: FM → GM → Advances
-    const fmH=buildSection('FM Approval',fm,visPo,'#2563eb',true);
-    const gmH=buildSection('GM Approval',gm,visPo,'#7c3aed',true);
-    const advH=buildSection('Advance Payments',advs,visAdv,'#d97706');
-    const totalFm=fm.reduce((s,e)=>s+(e.amountSar||0),0);
-    const totalGm=gm.reduce((s,e)=>s+(e.amountSar||0),0);
-    const totalAdv=advs.reduce((s,e)=>s+(e.advanceAmount||0),0);
-    // Unique amount total avoids double-counting GM POs that intentionally appear in FM + GM.
-    const uniquePoTotal=pending.filter(e=>!isAdvanceEntry(e)).reduce((s,e)=>s+(Number(e.amountSar)||0),0);
-    const uniqueGrandTotal=uniquePoTotal+totalAdv;
 
-    // Send to all manager emails — primary gets to_email, rest go to CC
-    const primaryMgr = managerEmails[0] || managerEmail;
-    const extraMgrs  = managerEmails.slice(1);
-    const allCC      = [...extraMgrs, ...ccEmails].filter(Boolean).join(', ');
+    const makeParams=(batch,section,partNo,totalParts,pdfData=null,contentMode=dispatchContent)=>{
+      let fm=[],gm=[],advs=[];
+      if(section==='FM') fm=batch;
+      else if(section==='GM') gm=batch;
+      else if(section==='ADV') advs=batch;
+      else {const g=getDispatchGroups(batch);fm=g.fm;gm=g.gm;advs=g.advances;}
+      const fmH=contentMode==='html'?buildHtmlSection('FM Approval',fm,visPo,'#2563eb',true):'';
+      const gmH=contentMode==='html'?buildHtmlSection('GM Approval',gm,visPo,'#7c3aed',true):'';
+      const advH=contentMode==='html'?buildHtmlSection('Advance Payments',advs,visAdv,'#d97706',false):'';
+      const label=section==='FM'?'FM Approval':section==='GM'?'GM Approval':section==='ADV'?'Advance Payments':'Procurement Approval';
+      const partText=totalParts>1?` (Part ${partNo} of ${totalParts})`:'';
+      const subject=`${label} Request - ${today}${partText}`;
+      const totalFm=fm.reduce((s,e)=>s+Number(e.amountSar||0),0), totalGm=gm.reduce((s,e)=>s+Number(e.amountSar||0),0), totalAdv=advs.reduce((s,e)=>s+Number(e.advanceAmount||0),0);
+      const uniquePoEntries=batch.filter(e=>!isAdvanceEntry(e));
+      const uniquePo=uniquePoEntries.reduce((s,e)=>s+Number(e.amountSar||0),0);
+      const poCount=uniquePoEntries.length;
+      const contentBody=contentMode==='pdf'
+        ? `<div style="font-family:Arial,sans-serif;padding:18px"><h2 style="margin:0 0 6px">${label}${partText}</h2><p style="color:#64748b">${today} · ${batch.length} request${batch.length===1?'':'s'}</p><p>The detailed approval report is attached as a PDF.</p></div>`
+        : `<div style="font-family:Arial,sans-serif;font-size:13px;color:#0f172a;max-width:1100px;margin:0 auto;padding:20px"><h2 style="margin:0 0 4px">${label}${partText}</h2><p style="color:#64748b;font-size:12px;margin:0 0 16px">${today}</p>${fmH}${gmH}${advH}</div>`;
+      const params={subject_line:subject,to_email:primaryMgr,cc_email:allCC,po_table:fmH+gmH,fm_table:fmH,gm_table:gmH,adv_table:advH,html_body:contentBody,summary_count:batch.length,po_count:poCount,fm_count:fm.length,gm_count:gm.length,adv_count:advs.length,total_po_sar:uniquePo.toLocaleString(),total_fm_sar:totalFm.toLocaleString(),total_gm_sar:totalGm.toLocaleString(),total_adv_sar:totalAdv.toLocaleString(),total_sar:(uniquePo+totalAdv).toLocaleString(),part_number:partNo,part_total:totalParts};
+      if(pdfData){params.approval_pdf=pdfData.dataUri;params.approval_pdf_name=pdfData.filename;}
+      return params;
+    };
 
-    const subject  = `Procurement Approval Request - ${today}`;
-    const fullHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:13px;color:#0f172a;max-width:1100px;margin:0 auto;padding:24px;background:#f8fafc">
-      <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:22px">
-        <h2 style="margin:0 0 4px;font-size:18px">Procurement Approval Request</h2>
-        <p style="color:#64748b;font-size:12px;margin:0 0 16px">${today} · FM ${fm.length} · GM ${gm.length} · Advances ${advs.length}</p>
-        ${fmH}${gmH}${advH}
-        <hr style="border:none;border-top:1px solid #e2e8f0;margin:22px 0">
-        <table style="font-size:12px;color:#64748b;border-collapse:collapse">
-          <tr><td style="padding:3px 28px 3px 0">FM Total SAR</td><td style="font-weight:700;color:#2563eb">${totalFm.toLocaleString()}</td></tr>
-          <tr><td style="padding:3px 28px 3px 0">GM Total SAR</td><td style="font-weight:700;color:#7c3aed">${totalGm.toLocaleString()}</td></tr>
-          <tr><td style="padding:3px 28px 3px 0">Advance Total SAR</td><td style="font-weight:700;color:#d97706">${totalAdv.toLocaleString()}</td></tr>
-          <tr><td style="padding:5px 28px 0 0;font-weight:700">Unique Request Total SAR</td><td style="font-weight:800;color:#0f172a;font-size:14px">${uniqueGrandTotal.toLocaleString()}</td></tr>
-        </table>
-      </div>
-    </body></html>`;
+    const jobs=buildDispatchJobs(pending);
+    const emailParts=[];
 
-    // ── EmailJS dispatch (V3.1: only supported provider) ──
-    if (!EMAILJS_SERVICE_ID||!EMAILJS_TEMPLATE_ID||!EMAILJS_PUBLIC_KEY) {
-      throw new Error('EmailJS keys missing in Settings → Connection');
+    if(dispatchGrouping==='combined'){
+      // Combined means exactly ONE email. Never split the request into multiple messages.
+      const job=jobs[0];
+      if(dispatchContent==='pdf'){
+        emailParts.push({job,batch:job.entries,forcePdf:true,autoPdf:false});
+      }else{
+        const probe=makeParams(job.entries,job.section,1,1,null,'html');
+        if(paramsBytes(probe)<=EMAILJS_SAFE_BYTES){
+          emailParts.push({job,batch:job.entries,forcePdf:false,autoPdf:false});
+        }else{
+          // Inline HTML would exceed EmailJS' variable limit. Keep ONE email and move
+          // the full report into a PDF attachment instead of creating Part 1/2/3.
+          if(!window.jspdf?.jsPDF) throw new Error('Combined report is too large for inline email tables and the PDF library did not load. Check your internet connection and retry.');
+          emailParts.push({job,batch:job.entries,forcePdf:true,autoPdf:true});
+        }
+      }
+    }else{
+      // Separate mode can create multiple emails/parts when a single approval list is large.
+      for(const job of jobs){
+        if(dispatchContent==='html'){
+          let current=[];
+          for(const e of job.entries){
+            const candidate=[...current,e];
+            const probe=makeParams(candidate,job.section,1,99,null,'html');
+            if(current.length && paramsBytes(probe)>EMAILJS_SAFE_BYTES){emailParts.push({job,batch:current,forcePdf:false,autoPdf:false});current=[e];} else current=candidate;
+          }
+          if(current.length) emailParts.push({job,batch:current,forcePdf:false,autoPdf:false});
+        }else{
+          // Start with modest PDF batches, then split again if the actual PDF is too large.
+          for(let i=0;i<job.entries.length;i+=25) emailParts.push({job,batch:job.entries.slice(i,i+25),forcePdf:true,autoPdf:false});
+        }
+      }
+
+      // Refine PDF batches using their actual encoded size in Separate mode only.
+      if(dispatchContent==='pdf'){
+        for(let i=0;i<emailParts.length;i++){
+          const part=emailParts[i];
+          const pdf=createDispatchPdf(part.batch,part.job.section,1,1);
+          if(pdf.bytes>PDF_SAFE_BYTES && part.batch.length>1){
+            const mid=Math.ceil(part.batch.length/2);
+            emailParts.splice(i,1,{job:part.job,batch:part.batch.slice(0,mid),forcePdf:true,autoPdf:false},{job:part.job,batch:part.batch.slice(mid),forcePdf:true,autoPdf:false}); i--;
+          }else if(pdf.bytes>PDF_SAFE_BYTES){
+            throw new Error('A single PDF request is too large for the conservative attachment limit. Reduce very long Notes/Description text or use Tables in email.');
+          }
+        }
+      }
     }
-    if (typeof emailjs === 'undefined') {
-      throw new Error('EmailJS library not loaded. Check your internet connection.');
-    }
-    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-      subject_line: subject,
-      to_email:     primaryMgr,
-      cc_email:     allCC,
-      po_table:     fmH + gmH,
-      fm_table:     fmH,
-      gm_table:     gmH,
-      adv_table:    advH,
-      html_body:    fullHtml,
-      summary_count:pending.length, fm_count:fm.length, gm_count:gm.length, adv_count:advs.length,
-      total_fm_sar: totalFm.toLocaleString(),
-      total_gm_sar: totalGm.toLocaleString(),
-      total_adv_sar:totalAdv.toLocaleString(),
-      total_sar:    uniqueGrandTotal.toLocaleString()
-    }, EMAILJS_PUBLIC_KEY);
 
-    toast('Dispatched successfully!','success');
+    // Count parts inside each logical job so subjects read Part x of y per FM/GM/Advance list.
+    const jobPartTotals=new Map();
+    emailParts.forEach(p=>jobPartTotals.set(p.job,(jobPartTotals.get(p.job)||0)+1));
+    const jobPartIndex=new Map();
+
+    const sendWithRetry=async(params)=>{
+      let lastErr;
+      for(let attempt=1;attempt<=2;attempt++){
+        try{return await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,params,EMAILJS_PUBLIC_KEY);}catch(err){lastErr=err;if(attempt<2) await sleep(1400);}
+      }
+      throw lastErr;
+    };
+
+    for(let i=0;i<emailParts.length;i++){
+      const part=emailParts[i], job=part.job;
+      const idx=(jobPartIndex.get(job)||0)+1; jobPartIndex.set(job,idx);
+      const total=jobPartTotals.get(job)||1;
+      let pdfData=null;
+      const contentMode=part.forcePdf?'pdf':'html';
+      if(part.forcePdf){
+        pdfData=createDispatchPdf(part.batch,job.section,idx,total);
+        if(part.autoPdf) toast('Combined list is too large for inline tables — sending one email with the full PDF attached.','info');
+      }
+      const params=makeParams(part.batch,job.section,idx,total,pdfData,contentMode);
+      if(paramsBytes(params)>49*1024) throw new Error(`Email payload still exceeds EmailJS' 50 KB variables limit.`);
+      toast(`Sending ${job.label}${total>1?` ${idx}/${total}`:''}…`,'info');
+      await sendWithRetry(params);
+      markDone(part.batch,job.section);
+      if(i<emailParts.length-1) await sleep(RATE_DELAY_MS);
+    }
+
+    const fullyDone=pending.filter(isFullyDone).map(e=>e.id);
+    const incomplete=pending.filter(e=>!isFullyDone(e)).map(e=>e.id);
+    if(incomplete.length) await supabaseClient.from('entries').update({is_sent:false}).in('id',incomplete);
+    rememberRecentlySent(fullyDone);
+    toast(`Dispatched successfully · ${emailParts.length} email${emailParts.length===1?'':'s'}`,'success');
     document.getElementById('success-modal').classList.add('open');
     await loadEntries();
     return true;
-  } catch(err) {
-    // Rollback: un-mark any entries we already flipped to sent
-    if(ids && ids.length) {
-      await supabaseClient.from('entries').update({is_sent:false}).in('id',ids);
-    }
-    const errMsg = err?.text || err?.message || err?.status || JSON.stringify(err) || 'Unknown error';
-    console.error('Dispatch error full object:', err);
-    toast('Dispatch failed: ' + errMsg, 'error');
-    if (isScheduled) sendEmail._lastMinute = '';
-    return false;
-  } finally { isSending=false; }
+  }catch(err){
+    const rollback= pending.filter(e=>!isFullyDone(e)).map(e=>e.id);
+    if(rollback.length){try{await supabaseClient.from('entries').update({is_sent:false}).in('id',rollback);}catch{}}
+    const done=pending.filter(isFullyDone).map(e=>e.id); if(done.length) rememberRecentlySent(done);
+    const msg=err?.text||err?.message||err?.status||JSON.stringify(err)||'Unknown error';
+    console.error('Dispatch error full object:',err);
+    toast('Dispatch failed: '+msg+(done.length?` (${done.length} requests fully completed)`:''),'error');
+    if(isScheduled) sendEmail._lastMinute='';
+    await loadEntries(); return false;
+  }finally{isSending=false;}
 }
 
 // Schedule check — fires every 10s
@@ -1081,6 +1506,14 @@ let lastScheduledMinute = '';  // prevents re-firing same minute (multi-tab safe
 
 async function checkSchedule() {
   if (!dailySendTime || isSending) return;
+  if (sizeTestRows.length) return; // test rows can never trigger a real automatic email
+
+  const currentPending=getDispatchPendingEntries();
+  if(currentPending.length && buildFullManualEmail(currentPending).bytes>=EMAILJS_HARD_LIMIT_BYTES){
+    emailSizeAutoBlocked=true;
+    updateMainEmailSizeGuard();
+    return;
+  }
 
   const now    = new Date();
   const hh     = String(now.getHours()).padStart(2,'0');
@@ -1194,7 +1627,7 @@ function exportToExcel(){
 function updateSupplierList(){
   const dl=document.getElementById('supplier-list'); if(!dl) return;
   const forgotten=JSON.parse(localStorage.getItem('forgotten_suppliers')||'[]');
-  const unique=[...new Set(entries.map(e=>e.supplier).filter(Boolean))].filter(s=>!forgotten.includes(s)).sort();
+  const unique=[...new Set(entries.filter(e=>!isSizeTestEntry(e)).map(e=>e.supplier).filter(Boolean))].filter(s=>!forgotten.includes(s)).sort();
   dl.innerHTML=unique.map(s=>`<option value="${s}">`).join('');
 }
 function removeSupplierFromMemory(){
@@ -1460,7 +1893,14 @@ document.getElementById('btn-close-settings')?.addEventListener('click',()=>{
 document.getElementById('btn-save-settings')?.addEventListener('click',saveSettings);
 document.getElementById('btn-finalize')?.addEventListener('click',openDispatchPreview);
 document.getElementById('btn-confirm-dispatch')?.addEventListener('click',confirmDispatch);
+document.getElementById('btn-download-pdf')?.addEventListener('click',downloadDispatchPdfPreview);
 document.getElementById('btn-close-preview')?.addEventListener('click',()=>document.getElementById('preview-modal').classList.remove('open'));
+document.getElementById('btn-main-fill-limit')?.addEventListener('click',fillMainToEmailLimit);
+document.getElementById('btn-main-clear-limit')?.addEventListener('click',clearMainSizeTestRows);
+document.getElementById('btn-main-copy-full-email')?.addEventListener('click',copyFullEmail);
+document.getElementById('btn-copy-full-email')?.addEventListener('click',copyFullEmail);
+document.querySelectorAll('input[name="dispatch-grouping"]').forEach(r=>r.addEventListener('change',e=>{dispatchGrouping=e.target.value;localStorage.setItem('dispatch_grouping',dispatchGrouping);syncDispatchOptionsUI();}));
+document.querySelectorAll('input[name="dispatch-content"]').forEach(r=>r.addEventListener('change',e=>{dispatchContent=e.target.value;localStorage.setItem('dispatch_content',dispatchContent);syncDispatchOptionsUI();}));
 cancelBtn?.addEventListener('click',cancelEdit);
 mgrEmailEl?.addEventListener('change',()=>{ managerEmail=mgrEmailEl.value.trim(); });
 document.getElementById('btn-theme-toggle')?.addEventListener('click',toggleTheme);
@@ -1810,6 +2250,10 @@ async function checkEmailJS() {
   if (!EMAILJS_TEMPLATE_ID) return { status:'fail', detail:'EmailJS Template ID missing. Add it in Connection tab.' };
   if (!EMAILJS_PUBLIC_KEY)  return { status:'fail', detail:'EmailJS Public Key missing. Add it in Connection tab.' };
   if (typeof emailjs === 'undefined') return { status:'fail', detail:'EmailJS library not loaded. Check your internet connection.' };
+  if (dispatchContent==='pdf') {
+    if (!window.jspdf?.jsPDF) return { status:'fail', detail:'PDF mode selected but the PDF library did not load.' };
+    return { status:'warn', detail:`EmailJS ready · PDF mode selected. Confirm your EmailJS template has Variable Attachment parameter "approval_pdf" and that your plan supports attachments.` };
+  }
   return { status:'ok', detail:`EmailJS ready · Service: ${EMAILJS_SERVICE_ID} · Template: ${EMAILJS_TEMPLATE_ID}` };
 }
 

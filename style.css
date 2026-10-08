@@ -1344,3 +1344,125 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f3f6fb 100%);font-size:13px}
   .theme-toggle span{display:none}
   .field-label-row{margin-bottom:7px}
 }
+
+/* ═══════════════════════════════════════════════════════════
+   V4.2 — DISPATCH DELIVERY OPTIONS
+   ═══════════════════════════════════════════════════════════ */
+.dispatch-options{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:8px 0 10px}
+.dispatch-option-group{border:1px solid var(--b1);background:var(--s1);border-radius:12px;padding:12px}
+.dispatch-option-title{font-size:.68rem;font-weight:800;color:var(--t1);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.dispatch-choice{display:flex;align-items:flex-start;gap:9px;padding:9px;border-radius:9px;cursor:pointer;transition:.15s ease}
+.dispatch-choice:hover{background:var(--s2)}
+.dispatch-choice input{margin-top:2px;accent-color:var(--a)}
+.dispatch-choice span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dispatch-choice b{font-size:.76rem;color:var(--t0)}
+.dispatch-choice small{font-size:.64rem;color:var(--t2);line-height:1.35}
+.pdf-setup-note{display:flex;gap:9px;align-items:flex-start;margin:8px 0 12px;padding:10px 11px;border:1px solid rgba(245,158,11,.25);background:rgba(245,158,11,.07);border-radius:10px;color:var(--t1);font-size:.67rem;line-height:1.45}
+.pdf-setup-note svg{width:15px;height:15px;flex:none;color:var(--amber);margin-top:1px}
+.pdf-setup-note code{font-size:.64rem;background:var(--s0);border:1px solid var(--b0);padding:1px 4px;border-radius:5px;color:var(--t0)}
+.dispatch-mode-summary{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:9px 11px;border:1px solid var(--b1);background:var(--s1);border-radius:10px;font-size:.7rem;color:var(--t1)}
+.dispatch-mode-summary b{color:var(--t0)}
+#btn-download-pdf{min-width:170px}
+[data-theme="dark"] .pdf-setup-note{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.22)}
+@media(max-width:700px){.dispatch-options{grid-template-columns:1fr}.dispatch-choice{padding:8px 6px}.dispatch-mode-summary{align-items:flex-start}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V4.3 — EMAILJS SIZE WARNING + MANUAL FULL EMAIL COPY
+   ═══════════════════════════════════════════════════════════════════ */
+.email-size-warning{
+  display:none;
+  align-items:flex-start;
+  gap:10px;
+  margin:0 0 14px;
+  padding:11px 13px;
+  border:1px solid rgba(245,158,11,.34);
+  background:rgba(245,158,11,.09);
+  border-radius:11px;
+  color:var(--t1);
+  font-size:.72rem;
+  line-height:1.45;
+}
+.email-size-warning.show{display:flex}
+.email-size-warning.danger{
+  border-color:rgba(239,68,68,.38);
+  background:rgba(239,68,68,.08);
+}
+.email-size-warning>svg{width:16px;height:16px;flex:0 0 16px;margin-top:1px;color:var(--amber)}
+.email-size-warning.danger>svg{color:var(--red)}
+.email-size-warning>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.email-size-warning b{color:var(--t0);font-size:.74rem}
+.email-size-warning span{color:var(--t1)}
+#btn-copy-full-email.limit-active{
+  border-color:rgba(245,158,11,.55);
+  background:rgba(245,158,11,.12);
+  color:#b45309;
+  box-shadow:0 0 0 3px rgba(245,158,11,.08);
+  animation:copyLimitPulse 1.7s ease-in-out 2;
+}
+#btn-copy-full-email.limit-danger{
+  border-color:rgba(239,68,68,.5);
+  background:rgba(239,68,68,.1);
+  color:var(--red);
+}
+@keyframes copyLimitPulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px);box-shadow:0 0 0 5px rgba(245,158,11,.1)}}
+[data-theme="dark"] .email-size-warning{background:rgba(245,158,11,.10)}
+[data-theme="dark"] .email-size-warning.danger{background:rgba(239,68,68,.09)}
+[data-theme="dark"] #btn-copy-full-email.limit-active{color:#fbbf24}
+
+/* ═══════════════════════════════════════════════════════════
+   FINAL — EMAIL SIZE GUARD + SETTINGS-ONLY TEST TOOL
+   ═══════════════════════════════════════════════════════════ */
+.test-kicker{display:flex;align-items:center;gap:7px;font-size:.72rem;font-weight:750;color:var(--t0)}
+.test-kicker svg{width:14px;height:14px;color:var(--a)}
+.size-test-status{font-size:.66rem;font-weight:700;color:var(--t2);padding:5px 8px;border-radius:999px;background:var(--s1);border:1px solid var(--b0);white-space:nowrap}
+.size-test-status.running{color:var(--a);background:var(--adim);border-color:var(--aglo)}
+.size-test-status.limit{color:var(--red);background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.22)}
+
+.main-email-limit-alert{
+  display:none;align-items:center;justify-content:space-between;gap:18px;
+  padding:14px 16px;border-radius:14px;border:1px solid rgba(239,68,68,.26);
+  background:rgba(239,68,68,.065);box-shadow:0 5px 18px rgba(239,68,68,.05);
+}
+.main-email-limit-alert.show{display:flex}
+.main-email-limit-message{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.main-email-limit-message>svg{width:18px;height:18px;flex:0 0 18px;color:var(--red);margin-top:1px}
+.main-email-limit-message>div{display:flex;flex-direction:column;gap:2px}
+.main-email-limit-message b{font-size:.77rem;color:var(--t0)}
+.main-email-limit-message span{font-size:.68rem;line-height:1.45;color:var(--t1)}
+#btn-main-copy-full-email{min-width:158px;flex-shrink:0}
+
+/* Generated test rows are visible in the real table, but unmistakably local-only. */
+.dtable tbody tr.size-test-row td{background:rgba(99,102,241,.045)}
+.dtable tbody tr.size-test-row td:first-child{box-shadow:inset 3px 0 0 rgba(99,102,241,.65)}
+.size-test-badge{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;background:var(--adim);color:var(--a);font-size:.61rem;font-weight:800;letter-spacing:.04em}
+
+[data-theme="dark"] [data-theme="dark"] .main-email-limit-alert{background:rgba(239,68,68,.085);border-color:rgba(248,113,113,.28)}
+[data-theme="dark"] .dtable tbody tr.size-test-row td{background:rgba(99,102,241,.075)}
+
+@media(max-width:860px){
+  .main-email-limit-alert{align-items:stretch;flex-direction:column}
+    #btn-main-copy-full-email{width:100%}
+}
+.preview-test-lock{display:block;margin-top:4px;color:var(--red);font-size:.67rem;font-weight:700}
+#btn-confirm-dispatch:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.15)}
+
+/* FINAL BUILD · settings-only stress-test tools */
+.settings-test-tools{
+  margin-top:18px;border:1px dashed var(--b1);border-radius:var(--r2);background:var(--s1);overflow:hidden
+}
+.settings-test-tools>summary{
+  list-style:none;cursor:pointer;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:8px;
+  padding:10px 12px;font-size:.72rem;font-weight:700;color:var(--t1);user-select:none
+}
+.settings-test-tools>summary::-webkit-details-marker{display:none}
+.settings-test-tools>summary svg{width:14px;height:14px;color:var(--a)}
+.settings-test-tools>summary small{justify-self:end;font-size:.63rem;font-weight:500;color:var(--t2)}
+.settings-test-tools[open]>summary{border-bottom:1px solid var(--b0);color:var(--t0)}
+.settings-test-tools-body{padding:12px}
+.settings-test-tools-body p{font-size:.68rem;line-height:1.5;color:var(--t1);margin:0 0 10px}
+.settings-test-tools-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.settings-test-tools-actions .size-test-status{margin-right:auto}
+@media(max-width:620px){
+  .settings-test-tools>summary{grid-template-columns:auto 1fr}.settings-test-tools>summary small{display:none}
+  .settings-test-tools-actions{align-items:stretch}.settings-test-tools-actions .btn{flex:1 1 100%}
+}
