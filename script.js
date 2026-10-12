@@ -32,6 +32,12 @@ const SIZE_TEST_PREFIX = 'limit-test-';
 let sizeTestRows = [];
 let emailSizeAutoBlocked = false;
 
+// Manual fallback: after Copy Full Email, remember exactly which REAL pending
+// requests were included so the user can mark that copied batch as sent only
+// after sending it manually from Outlook/Gmail.
+let lastCopiedBatchIds = [];
+const COPIED_BATCH_SESSION_KEY = 'manual_copied_batch_ids';
+
 // ═══════════════════════════
 //  DOM REFS
 // ═══════════════════════════
@@ -361,6 +367,8 @@ async function loadEntries() {
   renderDashboard();
   updateSupplierList();
   buildReuseMenu();
+  // Restore/update the manual copied-batch action after a refresh or realtime reload.
+  if(!lastCopiedBatchIds.length) restoreCopiedBatchState(); else updateCopiedBatchUI();
 }
 
 async function autoPurge() {
@@ -1168,10 +1176,96 @@ function fallbackRichCopy(html) {
   return ok;
 }
 
+function setCopiedBatchState(ids=[]) {
+  lastCopiedBatchIds=[...new Set((ids||[]).filter(Boolean))];
+  try {
+    if(lastCopiedBatchIds.length) sessionStorage.setItem(COPIED_BATCH_SESSION_KEY, JSON.stringify({ids:lastCopiedBatchIds,ts:Date.now()}));
+    else sessionStorage.removeItem(COPIED_BATCH_SESSION_KEY);
+  } catch {}
+  updateCopiedBatchUI();
+}
+
+function restoreCopiedBatchState() {
+  try {
+    const raw=JSON.parse(sessionStorage.getItem(COPIED_BATCH_SESSION_KEY)||'null');
+    if(raw && Array.isArray(raw.ids) && raw.ids.length && (!raw.ts || Date.now()-raw.ts < 2*60*60*1000)) {
+      // Keep only rows that are still real, pending, and dispatch-eligible.
+      lastCopiedBatchIds=raw.ids.filter(id=>{
+        const e=entries.find(x=>x.id===id);
+        return e && !isSizeTestEntry(e) && e.status==='pending' && isDispatchEligible(e);
+      });
+      if(!lastCopiedBatchIds.length) sessionStorage.removeItem(COPIED_BATCH_SESSION_KEY);
+    } else {
+      lastCopiedBatchIds=[];
+      sessionStorage.removeItem(COPIED_BATCH_SESSION_KEY);
+    }
+  } catch { lastCopiedBatchIds=[]; }
+  updateCopiedBatchUI();
+}
+
+function updateCopiedBatchUI() {
+  const count=lastCopiedBatchIds.filter(id=>{
+    const e=entries.find(x=>x.id===id);
+    return e && !isSizeTestEntry(e) && e.status==='pending' && isDispatchEligible(e);
+  }).length;
+  if(count!==lastCopiedBatchIds.length) lastCopiedBatchIds=lastCopiedBatchIds.filter(id=>{
+    const e=entries.find(x=>x.id===id);
+    return e && !isSizeTestEntry(e) && e.status==='pending' && isDispatchEligible(e);
+  });
+  const bar=document.getElementById('copied-batch-bar');
+  const countEl=document.getElementById('copied-batch-count');
+  if(bar) bar.classList.toggle('show',count>0);
+  if(countEl) countEl.textContent=String(count);
+  ['btn-mark-copied-sent','btn-mark-copied-sent-preview'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.style.display=count>0?'inline-flex':'none';el.disabled=count===0;}
+  });
+}
+
+async function markCopiedBatchAsSent() {
+  const ids=lastCopiedBatchIds.filter(id=>{
+    const e=entries.find(x=>x.id===id);
+    return e && !isSizeTestEntry(e) && e.status==='pending' && isDispatchEligible(e);
+  });
+  if(!ids.length){setCopiedBatchState([]);return toast('No copied pending batch is available to mark as sent.','info');}
+  if(!confirm(`Mark ${ids.length} copied approval request${ids.length===1?'':'s'} as Sent?
+
+Use this only after you have pasted and sent the copied email from Outlook/Gmail.`)) return;
+
+  try {
+    let markedIds=[];
+    if(DEMO_MODE){
+      entries.forEach(e=>{if(ids.includes(e.id)){e.is_sent=true;e.on_hold=false;e.status='sent';}});
+      markedIds=ids.slice();
+      renderDashboard();
+    } else {
+      const {data,error}=await supabaseClient.from('entries')
+        .update({is_sent:true,on_hold:false})
+        .in('id',ids).eq('is_sent',false).eq('on_hold',false)
+        .select('id');
+      if(error) throw error;
+      markedIds=(data||[]).map(r=>r.id);
+      if(!markedIds.length) throw new Error('No pending records were updated. They may already have been sent or changed.');
+    }
+
+    rememberRecentlySent(markedIds);
+    setCopiedBatchState([]);
+    document.getElementById('preview-modal')?.classList.remove('open');
+    if(!DEMO_MODE) await loadEntries();
+    setFilter('justsent');
+    toast(`Marked ${markedIds.length} copied request${markedIds.length===1?'':'s'} as Sent.`, 'success');
+  } catch(err){
+    toast('Could not mark copied batch as sent: '+(err?.message||err),'error');
+  }
+}
+
 async function copyFullEmail() {
   const pending=entries.filter(e=>e.status==='pending' && isDispatchEligible(e));
   if(!pending.length) return toast('No FM, GM or Advance items to copy','info');
   const report=buildFullManualEmail(pending);
+  // Test rows may be included in the clipboard stress test, but they can never be
+  // marked as sent. Only real database/demo rows are remembered for the manual batch.
+  const markableIds=pending.filter(e=>!isSizeTestEntry(e)).map(e=>e.id);
   try{
     if(navigator.clipboard?.write && window.ClipboardItem){
       const item=new ClipboardItem({
@@ -1182,9 +1276,14 @@ async function copyFullEmail() {
     }else if(!fallbackRichCopy(report.html)){
       throw new Error('Browser clipboard API is unavailable');
     }
-    toast(`Full formatted email copied · ${report.count} requests. Paste it into a new email.`, 'success');
+    setCopiedBatchState(markableIds);
+    toast(`Full formatted email copied · ${report.count} requests. After you send it manually, click Mark Copied Batch as Sent.`, 'success');
   }catch(err){
-    try{await navigator.clipboard.writeText(report.plain);toast('Copied as plain text. Your browser blocked rich-format clipboard access.','info');}
+    try{
+      await navigator.clipboard.writeText(report.plain);
+      setCopiedBatchState(markableIds);
+      toast('Copied as plain text. After you send it manually, click Mark Copied Batch as Sent.','info');
+    }
     catch{toast('Copy failed — allow clipboard access for this site and retry.','error');}
   }
 }
@@ -1899,6 +1998,9 @@ document.getElementById('btn-main-fill-limit')?.addEventListener('click',fillMai
 document.getElementById('btn-main-clear-limit')?.addEventListener('click',clearMainSizeTestRows);
 document.getElementById('btn-main-copy-full-email')?.addEventListener('click',copyFullEmail);
 document.getElementById('btn-copy-full-email')?.addEventListener('click',copyFullEmail);
+document.getElementById('btn-mark-copied-sent')?.addEventListener('click',markCopiedBatchAsSent);
+document.getElementById('btn-mark-copied-sent-preview')?.addEventListener('click',markCopiedBatchAsSent);
+document.getElementById('btn-dismiss-copied-batch')?.addEventListener('click',()=>setCopiedBatchState([]));
 document.querySelectorAll('input[name="dispatch-grouping"]').forEach(r=>r.addEventListener('change',e=>{dispatchGrouping=e.target.value;localStorage.setItem('dispatch_grouping',dispatchGrouping);syncDispatchOptionsUI();}));
 document.querySelectorAll('input[name="dispatch-content"]').forEach(r=>r.addEventListener('change',e=>{dispatchContent=e.target.value;localStorage.setItem('dispatch_content',dispatchContent);syncDispatchOptionsUI();}));
 cancelBtn?.addEventListener('click',cancelEdit);

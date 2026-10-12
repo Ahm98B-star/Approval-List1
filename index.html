@@ -197,6 +197,17 @@
           <button id="btn-main-copy-full-email" type="button" class="btn btn-pri"><i data-lucide="copy"></i> Copy Full Email</button>
         </div>
 
+        <div id="copied-batch-bar" class="copied-batch-bar" role="status">
+          <div class="copied-batch-message">
+            <i data-lucide="clipboard-check"></i>
+            <div><b>Full email copied</b><span><strong id="copied-batch-count">0</strong> pending requests are waiting for manual send confirmation.</span></div>
+          </div>
+          <div class="copied-batch-actions">
+            <button id="btn-mark-copied-sent" type="button" class="btn btn-pri"><i data-lucide="check-check"></i> Mark Copied Batch as Sent</button>
+            <button id="btn-dismiss-copied-batch" type="button" class="btn btn-ghost" title="Dismiss without changing records"><i data-lucide="x"></i></button>
+          </div>
+        </div>
+
         <div class="filter-bar">
           <span class="fc-lbl">Filter</span>
           <button class="fchip on"  id="fc-all"     onclick="setFilter('all')"><i data-lucide="layers"></i> All</button>
@@ -431,6 +442,7 @@
       <div id="preview-content" style="max-height:380px;overflow-y:auto"></div>
       <div class="macts" style="margin-top:14px">
         <button id="btn-copy-full-email" class="btn btn-ghost fw"><i data-lucide="copy"></i> Copy Full Email</button>
+        <button id="btn-mark-copied-sent-preview" class="btn btn-pri fw" style="display:none"><i data-lucide="check-check"></i> Mark Copied Batch as Sent</button>
         <button id="btn-download-pdf" class="btn btn-ghost fw"><i data-lucide="file-down"></i> Download PDF Preview</button>
         <button id="btn-confirm-dispatch" class="btn btn-pri fw"><i data-lucide="send"></i> Confirm & Send</button>
         <button onclick="document.getElementById('preview-modal').classList.remove('open')" class="btn btn-ghost fw">Cancel</button>

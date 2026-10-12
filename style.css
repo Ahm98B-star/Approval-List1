@@ -1466,3 +1466,25 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f3f6fb 100%);font-size:13px}
   .settings-test-tools>summary{grid-template-columns:auto 1fr}.settings-test-tools>summary small{display:none}
   .settings-test-tools-actions{align-items:stretch}.settings-test-tools-actions .btn{flex:1 1 100%}
 }
+
+
+/* Manual copy fallback confirmation */
+.copied-batch-bar{
+  display:none;align-items:center;justify-content:space-between;gap:18px;
+  padding:14px 16px;border-radius:14px;border:1px solid rgba(5,150,105,.25);
+  background:rgba(5,150,105,.07);box-shadow:0 5px 18px rgba(5,150,105,.05)
+}
+.copied-batch-bar.show{display:flex}
+.copied-batch-message{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.copied-batch-message>svg{width:18px;height:18px;flex:0 0 18px;color:var(--green);margin-top:1px}
+.copied-batch-message>div{display:flex;flex-direction:column;gap:2px}
+.copied-batch-message b{font-size:.77rem;color:var(--t0)}
+.copied-batch-message span{font-size:.68rem;line-height:1.45;color:var(--t1)}
+.copied-batch-actions{display:flex;align-items:center;gap:7px;flex-shrink:0}
+#btn-dismiss-copied-batch{width:34px;padding:0;justify-content:center}
+[data-theme="dark"] .copied-batch-bar{background:rgba(5,150,105,.11);border-color:rgba(52,211,153,.28)}
+@media(max-width:860px){
+  .copied-batch-bar{align-items:stretch;flex-direction:column}
+  .copied-batch-actions{width:100%}
+  #btn-mark-copied-sent{flex:1}
+}
